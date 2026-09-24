@@ -1,0 +1,132 @@
+name: CD
+
+# Merge na master publica a imagem no GHCR, grava a tag imutavel no stack.yml
+# do repositorio de infraestrutura e dispara o webhook de GitOps do Portainer.
+# O "Re-pull image" do Portainer CE e pago; a tag do commit obriga o Docker a
+# baixar a imagem nova.
+on:
+  push:
+    branches: [master]
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Typecheck e lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7bac22a6d4244c4f0d16 # v4
+        with:
+          version: 10.33.3
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+
+      - name: Lint
+        run: pnpm lint
+
+  image:
+    name: Build e push
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Exigir variaveis publicas do build
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name vazia. A imagem subiria e so quebraria no navegador."
+              missing=1
+            fi
+          done
+          exit "$missing"
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Login no GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadados da imagem
+        id: meta
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build e push
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/sergiojunior1980/snack-station:${{ steps.meta.outputs.tag }}
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+  deploy:
+    name: Atualizar stack e disparar GitOps
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout da infraestrutura
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ vars.IAC_REPOSITORY }}
+          token: ${{ secrets.IAC_REPO_TOKEN }}
+          ref: master
+          persist-credentials: true
+
+      - name: Gravar a tag imutavel no stack.yml
+        run: |
+          set -euo pipefail
+          file=stacks/snack-station/stack.yml
+          sed -i -E "s|(image: ghcr.io/sergiojunior1980/snack-station:)[^[:space:]]*|\1${{ needs.image.outputs.tag }}|" "$file"
+          git diff --exit-code "$file" && echo "stack.yml ja apontava para essa tag" && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$file"
+          git commit -m "deploy snack-station ${{ needs.image.outputs.tag }} [skip ci]"
+          git push
+
+      - name: Disparar o webhook do Portainer
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --request POST "$PORTAINER_WEBHOOK_URL"
+        env:
+          PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}

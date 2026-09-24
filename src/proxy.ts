@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { homeFor, normalizeRole, sellerCanVisit } from "@/lib/roles";
 import { supabaseEnv } from "@/lib/supabase/env";
 
-const publicPaths = new Set(["/login"]);
+const publicPaths = new Set(["/login", "/api/health"]);
 
 export async function proxy(request: NextRequest) {
   const env = supabaseEnv();

@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+dist
+.git
+.github
+.turbo
+.env
+.env.*
+*.md
+supabase
+.DS_Store
+*.tsbuildinfo
+.pnpm-debug.log*
+coverage
+AGENTS.md
+CLAUDE.md
