@@ -7,7 +7,23 @@
     "dev": "next dev --port 43181 --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start --port 43181 --hostname 0.0.0.0",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:restart": "supabase stop && supabase start",
+    "db:health": "supabase status",
+    "db:env": "supabase status -o env",
+    "db:status": "supabase status -o env",
+    "db:setup": "pnpm install && pnpm db:start && pnpm db:types",
+    "db:reset": "supabase db reset",
+    "db:migration:new": "supabase migration new",
+    "db:migration:up": "supabase migration up",
+    "db:pull": "supabase db pull",
+    "db:diff": "supabase db diff",
+    "db:push": "supabase db push",
+    "db:types": "supabase gen types typescript --local > src/types/database.types.ts",
+    "db:seed": "supabase db dump --data-only --schema public -f supabase/seed.sql",
+    "db:seed:remote": "supabase db dump --data-only --schema public --linked -f supabase/seed.sql"
   },
   "engines": {
     "node": ">=20"
@@ -35,6 +51,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
+    "supabase": "2.117.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -1,25 +1,34 @@
+import { ModuleNav } from "@/components/module-nav";
 import { PageHero } from "@/components/page-hero";
 import { PurchaseDesk } from "@/components/purchase-desk";
+import { paymentLabel } from "@/lib/catalog";
 import { formatDateTime } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
-import { listProducts, recentPurchases } from "@/server/queries";
+import { Tape } from "@/components/tape";
+import { listPaymentMethods, listProducts, listTape, recentPurchases } from "@/server/queries";
 
 export default async function PurchasesPage() {
-  const [products, purchases] = await Promise.all([listProducts(), recentPurchases()]);
+  const [products, purchases, tape, methods] = await Promise.all([
+    listProducts(),
+    recentPurchases(),
+    listTape("compras_estoque"),
+    listPaymentMethods("pagamento"),
+  ]);
 
   return (
     <div className="space-y-8">
       <PageHero
         eyebrow="Reposição"
         title="Comprar produto"
-        description="Cada compra soma no estoque. Informe quanto você pagou por unidade para guardar o custo."
+        description="A compra soma estoque e atualiza o custo médio. Dinheiro e saldo da conta abatem a conta corrente."
       />
+      <ModuleNav items={[{ href: "/estoque", label: "Movimento" }, { href: "/compras", label: "Compras" }]} />
       {products.length === 0 ? (
         <p className="rounded-2xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
           Cadastre um produto antes de lançar a compra.
         </p>
       ) : (
-        <PurchaseDesk products={products} />
+        <PurchaseDesk products={products} methods={methods.filter((method) => method.active !== false)} />
       )}
       <section className="space-y-3">
         <h2 className="font-heading text-2xl">Compras recentes</h2>
@@ -36,6 +45,7 @@ export default async function PurchasesPage() {
                     <p className="text-xs text-muted-foreground">
                       {formatDateTime(purchase.created_at)}
                       {purchase.supplier ? ` · ${purchase.supplier}` : ""}
+                      {purchase.payment_method ? ` · ${paymentLabel(purchase.payment_method)}` : ""}
                     </p>
                   </div>
                   <p className="font-medium">{formatBRL(purchase.total_cents)}</p>
@@ -45,6 +55,7 @@ export default async function PurchasesPage() {
           )}
         </ul>
       </section>
+      <Tape title="Fita de compras e estoque" entries={tape} />
     </div>
   );
 }

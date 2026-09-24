@@ -1,10 +1,14 @@
 import Link from "next/link";
+import { CashDesk } from "@/components/cash-desk";
+import { FinanceTabs } from "@/components/finance-tabs";
 import { EmptyState, PageHero, Stat } from "@/components/page-hero";
 import { FinanceChart } from "@/components/finance-chart";
+import { PaymentMethodManager } from "@/components/payment-method-manager";
 import { bucketKey, eachBucket, formatBucket, formatDateTime, periodRange, seriesRange, type ReportGrain, type ReportPeriod } from "@/lib/dates";
 import { paymentLabel } from "@/lib/catalog";
 import { formatBRL } from "@/lib/money";
-import { financeEntries } from "@/server/queries";
+import { Tape } from "@/components/tape";
+import { accountBalance, cashDesk, financeEntries, listPaymentMethods, listTape } from "@/server/queries";
 
 const periods: { id: ReportPeriod; label: string }[] = [
   { id: "hoje", label: "Hoje" },
@@ -31,7 +35,14 @@ export default async function FinancePage({
   const seriesWindow = seriesRange(grain);
   const from = new Date(Math.min(selected.from.getTime(), seriesWindow.from.getTime()));
   const to = new Date(Math.max(selected.to.getTime(), seriesWindow.to.getTime()));
-  const { sales, purchases } = await financeEntries(from, to);
+  const [{ sales, purchases, movements: cashMoves, sessions }, desk, balance, tape, receipts, payments] = await Promise.all([
+    financeEntries(from, to),
+    cashDesk(),
+    accountBalance(),
+    listTape("caixa_vendas"),
+    listPaymentMethods("recebimento"),
+    listPaymentMethods("pagamento"),
+  ]);
 
   const inPeriod = (createdAt: string) => {
     const time = new Date(createdAt).getTime();
@@ -75,6 +86,29 @@ export default async function FinancePage({
       cents: purchase.total_cents,
       created_at: purchase.created_at,
     })),
+    ...sessions.filter((session) => inPeriod(session.opened_at)).map((session) => ({
+      id: `open-${session.id}`,
+      kind: "Abertura" as const,
+      detail: session.opening_note?.trim() || "Fundo de troco",
+      cents: session.opening_cents,
+      created_at: session.opened_at,
+    })),
+    ...sessions
+      .filter((session) => session.closed_at && inPeriod(session.closed_at))
+      .map((session) => ({
+        id: `close-${session.id}`,
+        kind: "Fechamento" as const,
+        detail: session.closing_note?.trim() || "Valor contado",
+        cents: session.counted_cents ?? 0,
+        created_at: session.closed_at as string,
+      })),
+    ...cashMoves.filter((movement) => inPeriod(movement.created_at)).map((movement) => ({
+      id: `cash-${movement.id}`,
+      kind: movement.kind === "entrada" ? ("Entrada" as const) : ("Retirada" as const),
+      detail: movement.note,
+      cents: movement.amount_cents,
+      created_at: movement.created_at,
+    })),
   ]
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, 40);
@@ -83,11 +117,15 @@ export default async function FinancePage({
 
   return (
     <div className="space-y-8">
-      <PageHero
-        eyebrow="Caixa"
-        title="Faturamento e despesa"
-        description="O que entrou nas vendas e o que saiu nas compras de produto. O resultado é faturamento menos despesa."
-      />
+      <FinanceTabs
+        caixa={
+          <>
+            <PageHero
+              eyebrow="Caixa"
+              title="Faturamento e despesa"
+              description="O que entrou nas vendas, o que saiu nas compras e o movimento do caixa."
+            />
+            <CashDesk open={desk.open} expectedCents={desk.expectedCents} recent={desk.recent} />
       <div className="flex flex-wrap gap-2">
         {periods.map((item) => (
           <Link
@@ -99,7 +137,8 @@ export default async function FinancePage({
           </Link>
         ))}
       </div>
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Conta corrente" value={formatBRL(balance)} hint="Aberturas, dinheiro, entradas, retiradas e compras no saldo" />
         <Stat label="Faturamento" value={formatBRL(revenue)} hint={`${periodSales.length} ${periodSales.length === 1 ? "venda" : "vendas"} · ${periodLabel}`} />
         <Stat label="Despesa" value={formatBRL(expense)} hint={`${periodPurchases.length} ${periodPurchases.length === 1 ? "compra" : "compras"} de produto`} />
         <Stat label="Resultado" value={formatBRL(result)} hint={result >= 0 ? "Faturamento cobriu a despesa" : "A despesa passou o faturamento"} />
@@ -133,8 +172,8 @@ export default async function FinancePage({
                   </p>
                   <p className="text-xs text-muted-foreground">{formatDateTime(item.created_at)}</p>
                 </div>
-                <p className={`text-sm font-medium ${item.kind === "Compra" ? "text-foreground" : "text-primary"}`}>
-                  {item.kind === "Compra" ? "−" : "+"}
+                <p className={`text-sm font-medium ${item.kind === "Compra" || item.kind === "Retirada" || item.kind === "Fechamento" ? "text-foreground" : "text-primary"}`}>
+                  {item.kind === "Compra" || item.kind === "Retirada" ? "−" : item.kind === "Fechamento" ? "" : "+"}
                   {formatBRL(item.cents)}
                 </p>
               </li>
@@ -142,6 +181,20 @@ export default async function FinancePage({
           </ul>
         )}
       </section>
+            <Tape title="Fita de caixa e vendas" entries={tape} />
+          </>
+        }
+        formas={
+          <>
+            <PageHero
+              eyebrow="Financeiro"
+              title="Formas de recebimento e pagamento"
+              description="Recebimento aparece na venda. Pagamento aparece na compra. Marque o que entra no caixa ou abate o saldo."
+            />
+            <PaymentMethodManager receipts={receipts} payments={payments} />
+          </>
+        }
+      />
     </div>
   );
 }

@@ -5,8 +5,8 @@ import { useActionState } from "react";
 import { Minus, Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { categoryLabel, paymentMethods } from "@/lib/catalog";
+import { Input, Select } from "@/components/ui/input";
+import { categoryLabel } from "@/lib/catalog";
 import { formatBRL } from "@/lib/money";
 import { registerSale, type ActionState } from "@/server/actions";
 import type { Product } from "@/server/queries";
@@ -14,18 +14,27 @@ import type { Product } from "@/server/queries";
 export function SaleDesk({
   products = [],
   categories = [],
+  cashOpen = true,
+  methods = [],
 }: {
   products: Product[];
   categories?: { slug: string; name: string }[];
+  cashOpen?: boolean;
+  methods?: { id: string; name: string }[];
 }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("todos");
   const [cart, setCart] = useState<Record<string, number>>({});
-  const [payment, setPayment] = useState("pix");
+  const [payments, setPayments] = useState<{ key: string; method: string; amount: string }[]>([
+    { key: "1", method: methods[0]?.id ?? "pix", amount: "" },
+  ]);
   const [state, action, pending] = useActionState(registerSale, null as ActionState);
 
   useEffect(() => {
-    if (state?.ok) setCart({});
+    if (state?.ok) {
+      setCart({});
+      setPayments([{ key: crypto.randomUUID(), method: "pix", amount: "" }]);
+    }
   }, [state]);
 
   const visible = useMemo(() => {
@@ -41,6 +50,18 @@ export function SaleDesk({
     .map((product) => ({ product, quantity: cart[product.id] }));
   const total = lines.reduce((sum, line) => sum + line.product.sale_price_cents * line.quantity, 0);
   const items = JSON.stringify(lines.map((line) => ({ product_id: line.product.id, quantity: line.quantity })));
+  const paid = payments.reduce((sum, item) => {
+    const cents = Math.round(Number(item.amount.replace(/\./g, "").replace(",", ".")) * 100);
+    return sum + (Number.isFinite(cents) ? cents : 0);
+  }, 0);
+  const paymentPayload = JSON.stringify(
+    payments
+      .map((item) => ({
+        method: item.method,
+        amount_cents: Math.round(Number(item.amount.replace(/\./g, "").replace(",", ".")) * 100),
+      }))
+      .filter((item) => item.amount_cents > 0),
+  );
 
   function add(product: Product) {
     setCart((current) => {
@@ -122,6 +143,7 @@ export function SaleDesk({
           <p className="text-sm text-muted-foreground">A venda debita o estoque na hora.</p>
         </div>
         <input type="hidden" name="items" value={items} />
+        <input type="hidden" name="payments" value={paymentPayload} />
         {lines.length === 0 ? (
           <p className="rounded-xl bg-muted px-3 py-6 text-center text-sm text-muted-foreground">Toque num produto para começar.</p>
         ) : (
@@ -149,19 +171,49 @@ export function SaleDesk({
             ))}
           </ul>
         )}
-        <div className="grid grid-cols-3 gap-2">
-          {paymentMethods.map((method) => (
-            <button
-              key={method.id}
-              type="button"
-              onClick={() => setPayment(method.id)}
-              className={`rounded-xl border px-2 py-2 text-xs font-medium ${payment === method.id ? "border-primary bg-primary text-primary-foreground" : "bg-background"}`}
-            >
-              {method.label}
-            </button>
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Pagamento</p>
+          {payments.map((item) => (
+            <div key={item.key} className="grid grid-cols-[1fr_96px_auto] gap-2">
+              <Select
+                value={item.method}
+                onChange={(event) =>
+                  setPayments((current) => current.map((row) => (row.key === item.key ? { ...row, method: event.target.value } : row)))
+                }
+              >
+                {methods.map((method) => (
+                  <option key={method.id} value={method.id}>
+                    {method.name}
+                  </option>
+                ))}
+              </Select>
+              <Input
+                inputMode="decimal"
+                value={item.amount}
+                placeholder="0,00"
+                onChange={(event) =>
+                  setPayments((current) => current.map((row) => (row.key === item.key ? { ...row, amount: event.target.value } : row)))
+                }
+              />
+              <button
+                type="button"
+                className="text-xs text-muted-foreground"
+                onClick={() => setPayments((current) => (current.length === 1 ? current : current.filter((row) => row.key !== item.key)))}
+              >
+                Excluir
+              </button>
+            </div>
           ))}
+          <button
+            type="button"
+            className="text-sm font-medium text-primary"
+            onClick={() => setPayments((current) => [...current, { key: crypto.randomUUID(), method: "dinheiro", amount: "" }])}
+          >
+            Outra forma
+          </button>
+          <p className="text-xs text-muted-foreground">Recebido {formatBRL(paid)} · falta {formatBRL(Math.max(total - paid, 0))}</p>
         </div>
-        <input type="hidden" name="payment" value={payment} />
+        {!cashOpen ? <p className="text-sm text-destructive">O caixa está fechado. A venda só entra com o caixa aberto.</p> : null}
         <Input name="note" placeholder="Observação (opcional)" />
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">Total</span>
@@ -169,7 +221,7 @@ export function SaleDesk({
         </div>
         {state?.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
         {state?.ok ? <p className="text-sm text-emerald-700">{state.ok}</p> : null}
-        <Button className="w-full" size="lg" disabled={pending || lines.length === 0}>
+        <Button className="w-full" size="lg" disabled={pending || lines.length === 0 || !cashOpen || paid !== total}>
           {pending ? "Registrando…" : "Registrar venda"}
         </Button>
       </form>

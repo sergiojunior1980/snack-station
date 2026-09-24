@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, LayoutDashboard, LogOut, Package, ShoppingBag, Truck, Users, Wallet } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BarChart3, LayoutDashboard, LogOut, Package, ShoppingBag, Users, Wallet, Warehouse } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { roleLabel } from "@/lib/roles";
 import type { Role } from "@/lib/roles";
@@ -10,17 +11,46 @@ import { cn } from "@/lib/utils";
 import { logout } from "@/server/actions";
 
 const nav = [
-  { href: "/", label: "Início", icon: LayoutDashboard, admin: true },
-  { href: "/vendas", label: "Vender", icon: ShoppingBag, admin: false },
-  { href: "/produtos", label: "Produtos", icon: Package, admin: false },
-  { href: "/compras", label: "Compras", icon: Truck, admin: true },
-  { href: "/financeiro", label: "Financeiro", icon: Wallet, admin: true },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3, admin: true },
-  { href: "/equipe", label: "Equipe", icon: Users, admin: true },
+  { href: "/", label: "Início", icon: LayoutDashboard, admin: true, children: [] as { href: string; label: string; admin?: boolean }[] },
+  { href: "/vendas", label: "Vender", icon: ShoppingBag, admin: false, children: [] },
+  {
+    href: "/produtos",
+    label: "Produtos",
+    icon: Package,
+    admin: false,
+    children: [
+      { href: "/produtos", label: "Cadastro" },
+      { href: "/categorias", label: "Categorias", admin: true },
+    ],
+  },
+  {
+    href: "/estoque",
+    label: "Estoque",
+    icon: Warehouse,
+    admin: true,
+    children: [
+      { href: "/estoque", label: "Movimento" },
+      { href: "/compras", label: "Compras" },
+    ],
+  },
+  {
+    href: "/financeiro",
+    label: "Financeiro",
+    icon: Wallet,
+    admin: true,
+    children: [
+      { href: "/financeiro", label: "Caixa", hash: "" },
+      { href: "/financeiro", label: "Formas de pagamento", hash: "formas" },
+    ],
+  },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3, admin: true, children: [] },
+  { href: "/equipe", label: "Equipe", icon: Users, admin: true, children: [] },
 ];
 
-function isActive(pathname: string, href: string) {
-  return pathname === href || (href !== "/" && pathname.startsWith(href));
+function groupActive(pathname: string, item: (typeof nav)[number]) {
+  if (item.href === "/") return pathname === "/";
+  if (pathname === item.href || pathname.startsWith(`${item.href}/`)) return true;
+  return item.children.some((child) => pathname === child.href || pathname.startsWith(`${child.href}/`));
 }
 
 export function AppShell({
@@ -33,6 +63,13 @@ export function AppShell({
   role: Role;
 }) {
   const pathname = usePathname();
+  const [hash, setHash] = useState("");
+  useEffect(() => {
+    const read = () => setHash(window.location.hash);
+    read();
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, [pathname]);
   const items = nav.filter((item) => role === "admin" || !item.admin);
 
   return (
@@ -42,19 +79,51 @@ export function AppShell({
         <nav className="flex flex-1 flex-col gap-1">
           {items.map((item) => {
             const Icon = item.icon;
-            const active = isActive(pathname, item.href);
+            const active = groupActive(pathname, item);
+            const children = item.children.filter((child) => role === "admin" || !("admin" in child && child.admin));
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
-                  active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                )}
-              >
-                <Icon className="size-4" />
-                {item.label}
-              </Link>
+              <div key={item.href}>
+                <Link
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
+                    active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {item.label}
+                </Link>
+                {active && children.length > 1 ? (
+                  <div className="mt-1 ml-7 flex flex-col gap-1">
+                    {children.map((child) => {
+                      const tab = "hash" in child ? child.hash : undefined;
+                      const href = tab ? `${child.href}#${tab}` : child.href;
+                      const onFinance = child.href === "/financeiro";
+                      const selected = onFinance
+                        ? pathname === "/financeiro" && (tab ? hash === `#${tab}` : hash !== "#formas")
+                        : pathname === child.href;
+                      return (
+                        <Link
+                          key={child.label}
+                          href={href}
+                          onClick={(event) => {
+                            if (pathname !== "/financeiro" || !onFinance) return;
+                            event.preventDefault();
+                            window.history.replaceState(null, "", href);
+                            window.dispatchEvent(new HashChangeEvent("hashchange"));
+                          }}
+                          className={cn(
+                            "rounded-lg px-2 py-1.5 text-xs",
+                            selected ? "bg-secondary font-medium text-foreground" : "text-muted-foreground",
+                          )}
+                        >
+                          {child.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </nav>
@@ -82,7 +151,7 @@ export function AppShell({
         <nav className={`fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-background/95 px-1 py-2 backdrop-blur md:hidden ${items.length <= 2 ? "grid-cols-2" : items.length > 6 ? "grid-cols-4" : "grid-cols-6"}`}>
           {items.map((item) => {
             const Icon = item.icon;
-            const active = isActive(pathname, item.href);
+            const active = groupActive(pathname, item);
             return (
               <Link
                 key={item.href}

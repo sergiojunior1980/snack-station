@@ -10,7 +10,7 @@ import type { Product } from "@/server/queries";
 
 type Line = { key: string; productId: string; quantity: string; cost: string };
 
-export function PurchaseDesk({ products }: { products: Product[] }) {
+export function PurchaseDesk({ products, methods }: { products: Product[]; methods: { id: string; name: string }[] }) {
   const [lines, setLines] = useState<Line[]>([{ key: "1", productId: products[0]?.id ?? "", quantity: "1", cost: "" }]);
   const [state, action, pending] = useActionState(registerPurchase, null as ActionState);
 
@@ -46,6 +46,16 @@ export function PurchaseDesk({ products }: { products: Product[] }) {
           <Input id="supplier" name="supplier" placeholder="Mercado, distribuidora..." />
         </div>
         <div className="space-y-1.5">
+          <Label htmlFor="payment">Pagamento</Label>
+          <Select id="payment" name="payment" defaultValue={methods[0]?.id ?? "dinheiro"}>
+            {methods.map((method) => (
+              <option key={method.id} value={method.id}>
+                {method.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="space-y-1.5">
           <Label htmlFor="note">Observação</Label>
           <Input id="note" name="note" placeholder="Nota, lote, o que quiser lembrar" />
         </div>
@@ -54,7 +64,7 @@ export function PurchaseDesk({ products }: { products: Product[] }) {
         {lines.map((line) => (
           <div key={line.key} className="grid gap-2 sm:grid-cols-[minmax(0,1.4fr)_90px_120px_auto]">
             <Select value={line.productId} onChange={(event) => update(line.key, { productId: event.target.value })}>
-              {products.map((product) => (
+              {products.filter((product) => !product.is_combo).map((product) => (
                 <option key={product.id} value={product.id}>
                   {product.name}
                 </option>
@@ -67,7 +77,7 @@ export function PurchaseDesk({ products }: { products: Product[] }) {
               variant="ghost"
               onClick={() => setLines((current) => (current.length === 1 ? current : current.filter((item) => item.key !== line.key)))}
             >
-              Tirar
+              Excluir
             </Button>
           </div>
         ))}

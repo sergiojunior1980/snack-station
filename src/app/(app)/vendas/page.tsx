@@ -1,21 +1,30 @@
 import { PageHero } from "@/components/page-hero";
 import { SaleDesk } from "@/components/sale-desk";
+import { Tape } from "@/components/tape";
 import { paymentLabel } from "@/lib/catalog";
 import { formatDateTime } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
-import { listCategories, listProducts, recentSales } from "@/server/queries";
+import { cashIsOpen, listCategories, listPaymentMethods, listProducts, listTape, recentSales, requireUser } from "@/server/queries";
 
 export default async function SalesPage() {
-  const [products, sales, categories] = await Promise.all([listProducts(), recentSales(8), listCategories()]);
+  const [{ role }, products, sales, categories, cashOpen, tape, methods] = await Promise.all([
+    requireUser(),
+    listProducts(),
+    recentSales(8),
+    listCategories(),
+    cashIsOpen(),
+    listTape("caixa_vendas"),
+    listPaymentMethods("recebimento"),
+  ]);
 
   return (
     <div className="space-y-8">
       <PageHero
         eyebrow="Balcão"
         title="Registrar venda"
-        description="Toque nos produtos, escolha dinheiro, PIX ou cartão. O estoque baixa assim que a venda entra."
+        description="Toque nos produtos e divida o pagamento se precisar. A venda só entra com o caixa aberto."
       />
-      <SaleDesk products={products} categories={categories} />
+      <SaleDesk products={products} categories={categories} cashOpen={cashOpen} methods={methods.filter((method) => method.active !== false)} />
       <section className="space-y-3">
         <h2 className="font-heading text-2xl">Vendas recentes</h2>
         <ul className="divide-y overflow-hidden rounded-2xl border bg-card">
@@ -39,6 +48,7 @@ export default async function SalesPage() {
           )}
         </ul>
       </section>
+      {role === "admin" ? <Tape title="Fita de caixa e vendas" entries={tape} /> : null}
     </div>
   );
 }

@@ -1,13 +1,14 @@
 import { redirect } from "next/navigation";
 import { PageHero } from "@/components/page-hero";
 import { TeamList } from "@/components/team-list";
-import { listTeam, requireUser } from "@/server/queries";
+import { Tape } from "@/components/tape";
+import { listTeam, listTape, requireUser } from "@/server/queries";
 
 export default async function TeamPage() {
   const { user, role } = await requireUser();
   if (!user) redirect("/login");
   if (role !== "admin") redirect("/vendas");
-  const members = await listTeam();
+  const [members, tape] = await Promise.all([listTeam(), listTape("perfis")]);
 
   return (
     <div className="space-y-6">
@@ -17,6 +18,7 @@ export default async function TeamPage() {
         description="Crie o vendedor com usuário e senha. Ele só registra venda e cadastra produto."
       />
       <TeamList members={members} currentUserId={user.id} />
+      <Tape title="Fita de perfis e usuários" entries={tape} />
     </div>
   );
 }

@@ -32,5 +32,7 @@ export function categoryLabel(id: string) {
 }
 
 export function paymentLabel(id: string) {
+  if (id === "misto") return "Mais de uma forma";
+  if (id === "saldo") return "Saldo da conta";
   return paymentMethods.find((item) => item.id === id)?.label ?? id;
 }
