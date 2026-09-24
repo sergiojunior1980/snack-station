@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { BrandLogo } from "@/components/brand-logo";
 
 export function AuthShell({
@@ -34,14 +33,6 @@ export function AuthShell({
       <div className="flex flex-col">
         <header className="flex h-16 items-center justify-between border-b border-border/80 bg-card px-6 lg:hidden">
           <BrandLogo href="/login" />
-          <div className="flex items-center gap-4 text-sm font-medium">
-            <Link href="/login" className="text-muted-foreground">
-              Entrar
-            </Link>
-            <Link href="/cadastro" className="text-primary">
-              Criar conta
-            </Link>
-          </div>
         </header>
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
           <p className="font-heading text-4xl tracking-tight">{title}</p>

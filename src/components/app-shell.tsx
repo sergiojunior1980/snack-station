@@ -2,32 +2,45 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, LayoutDashboard, LogOut, Package, ShoppingBag, Truck } from "lucide-react";
+import { BarChart3, LayoutDashboard, LogOut, Package, ShoppingBag, Truck, Users, Wallet } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
+import { roleLabel } from "@/lib/roles";
+import type { Role } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { logout } from "@/server/actions";
 
 const nav = [
-  { href: "/", label: "Início", icon: LayoutDashboard },
-  { href: "/vendas", label: "Vender", icon: ShoppingBag },
-  { href: "/produtos", label: "Produtos", icon: Package },
-  { href: "/compras", label: "Compras", icon: Truck },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
+  { href: "/", label: "Início", icon: LayoutDashboard, admin: true },
+  { href: "/vendas", label: "Vender", icon: ShoppingBag, admin: false },
+  { href: "/produtos", label: "Produtos", icon: Package, admin: false },
+  { href: "/compras", label: "Compras", icon: Truck, admin: true },
+  { href: "/financeiro", label: "Financeiro", icon: Wallet, admin: true },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3, admin: true },
+  { href: "/equipe", label: "Equipe", icon: Users, admin: true },
 ];
 
 function isActive(pathname: string, href: string) {
   return pathname === href || (href !== "/" && pathname.startsWith(href));
 }
 
-export function AppShell({ children, userName }: { children: React.ReactNode; userName: string }) {
+export function AppShell({
+  children,
+  userName,
+  role,
+}: {
+  children: React.ReactNode;
+  userName: string;
+  role: Role;
+}) {
   const pathname = usePathname();
+  const items = nav.filter((item) => role === "admin" || !item.admin);
 
   return (
     <div className="mx-auto flex min-h-screen max-w-7xl">
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border/70 bg-card/70 p-5 md:flex">
         <BrandLogo className="mb-8" />
         <nav className="flex flex-1 flex-col gap-1">
-          {nav.map((item) => {
+          {items.map((item) => {
             const Icon = item.icon;
             const active = isActive(pathname, item.href);
             return (
@@ -47,6 +60,7 @@ export function AppShell({ children, userName }: { children: React.ReactNode; us
         </nav>
         <div className="mt-auto rounded-2xl bg-secondary/80 p-3">
           <p className="truncate text-sm font-medium">{userName}</p>
+          <p className="text-xs text-muted-foreground">{roleLabel(role)}</p>
           <form action={logout}>
             <button type="submit" className="mt-2 flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
               <LogOut className="size-3.5" /> Sair
@@ -65,8 +79,8 @@ export function AppShell({ children, userName }: { children: React.ReactNode; us
           </form>
         </header>
         <main className="flex-1 px-4 py-6 pb-24 md:px-8 md:pb-10">{children}</main>
-        <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-background/95 px-1 py-2 backdrop-blur md:hidden">
-          {nav.map((item) => {
+        <nav className={`fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-background/95 px-1 py-2 backdrop-blur md:hidden ${items.length <= 2 ? "grid-cols-2" : items.length > 6 ? "grid-cols-4" : "grid-cols-6"}`}>
+          {items.map((item) => {
             const Icon = item.icon;
             const active = isActive(pathname, item.href);
             return (

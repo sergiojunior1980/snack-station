@@ -34,7 +34,7 @@ export function ProductManager({ products, categories }: { products: Product[]; 
                     {product.stock_quantity <= product.min_stock ? <Badge tone="watch">Estoque baixo</Badge> : null}
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {formatBRL(product.sale_price_cents)} · {product.stock_quantity} em estoque · mínimo {product.min_stock}
+                    {formatBRL(product.sale_price_cents)} venda · {formatBRL(product.cost_price_cents)} compra · {product.stock_quantity} em estoque
                   </p>
                   <AttributeLine attributes={product.attributes} />
                 </div>
@@ -79,7 +79,8 @@ function ProductForm({ categories }: { categories: Category[] }) {
           options={categories.map((item) => ({ value: item.slug, label: item.name }))}
         />
         {liquid ? <Field label="Tamanho (ml)" name="attr_volume_ml" type="number" min={1} step="1" required placeholder="350" /> : null}
-        <Field label="Preço de venda" name="price" placeholder="5,00" />
+        <Field label="Valor de compra" name="cost" placeholder="2,00" />
+        <Field label="Valor de venda" name="price" placeholder="5,00" />
         <Field label="Estoque inicial" name="stock" placeholder="24" type="number" min={0} />
         <Field label="Avisar quando chegar a" name="minStock" placeholder="5" type="number" min={0} defaultValue="5" />
       </div>
@@ -112,7 +113,8 @@ function EditProduct({ product, categories }: { product: Product; categories: Ca
       {liquid ? (
         <Field label="Tamanho (ml)" name="attr_volume_ml" type="number" min={1} step="1" required defaultValue={product.attributes?.volume_ml ?? ""} />
       ) : null}
-      <Field label="Preço de venda" name="price" defaultValue={(product.sale_price_cents / 100).toFixed(2).replace(".", ",")} />
+      <Field label="Valor de compra" name="cost" defaultValue={(product.cost_price_cents / 100).toFixed(2).replace(".", ",")} />
+      <Field label="Valor de venda" name="price" defaultValue={(product.sale_price_cents / 100).toFixed(2).replace(".", ",")} />
       <Field label="Estoque mínimo" name="minStock" type="number" min={0} defaultValue={String(product.min_stock)} />
       <label className="flex items-center gap-2 text-sm sm:col-span-2 lg:col-span-4">
         <input type="checkbox" name="active" defaultChecked={product.active} className="size-4 accent-[var(--primary)]" />

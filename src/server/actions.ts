@@ -1,10 +1,11 @@
 "use server";
 
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { paymentMethods } from "@/lib/catalog";
+import { homeFor } from "@/lib/roles";
+import { loginToEmail, normalizeUsername } from "@/lib/username";
 import { parseBRLToCents } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 
@@ -16,18 +17,11 @@ async function db() {
   return supabase;
 }
 
-async function appOrigin() {
-  const headerList = await headers();
-  const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "127.0.0.1:43181";
-  const proto = headerList.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
-}
-
 function message(error: { message: string }) {
   const text = error.message;
-  if (text.includes("Invalid login credentials")) return "E-mail ou senha incorretos.";
+  if (text.includes("Invalid login credentials")) return "Usuário ou senha incorretos.";
   if (text.includes("already registered") || text.includes("already been registered")) {
-    return "Este e-mail já tem conta.";
+    return "Este usuário já existe.";
   }
   if (text.includes("Estoque insuficiente")) return "Estoque insuficiente para um ou mais produtos.";
   if (text.includes("Password should be")) return "A senha precisa ter pelo menos 6 caracteres.";
@@ -35,60 +29,24 @@ function message(error: { message: string }) {
 }
 
 export async function login(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const email = String(formData.get("email") ?? "");
+  const username = String(formData.get("username") ?? "");
   const password = String(formData.get("password") ?? "");
-  const parsed = z.object({ email: z.email(), password: z.string().min(6) }).safeParse({ email, password });
-  if (!parsed.success) return { error: "Informe um e-mail válido e uma senha com 6 caracteres ou mais." };
-
-  const supabase = await db();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
-  if (error) {
-    if (error.message.toLowerCase().includes("email not confirmed")) {
-      await supabase.auth.resend({
-        type: "signup",
-        email: parsed.data.email,
-        options: { emailRedirectTo: `${await appOrigin()}/login` },
-      });
-      return {
-        error:
-          "Seu e-mail ainda não foi confirmado. Enviei outro link: abra a mensagem neste computador e clique em confirmar.",
-      };
-    }
-    return { error: message(error) };
+  if (normalizeUsername(username).length < 3 || password.length < 6) {
+    return { error: "Informe o usuário e uma senha com 6 caracteres ou mais." };
   }
-  redirect("/");
-}
-
-export async function register(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const parsed = z
-    .object({
-      name: z.string().trim().min(2, "Informe seu nome."),
-      email: z.email("Informe um e-mail válido."),
-      password: z.string().min(6, "A senha precisa ter pelo menos 6 caracteres."),
-    })
-    .safeParse({
-      name: formData.get("name"),
-      email: formData.get("email"),
-      password: formData.get("password"),
-    });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
 
   const supabase = await db();
-  const { data, error } = await supabase.auth.signUp({
-    email: parsed.data.email,
-    password: parsed.data.password,
-    options: {
-      data: { full_name: parsed.data.name },
-      emailRedirectTo: `${await appOrigin()}/login`,
-    },
+  const { data: sessionData, error } = await supabase.auth.signInWithPassword({
+    email: loginToEmail(username),
+    password,
   });
   if (error) return { error: message(error) };
-  if (!data.session) {
-    return {
-      ok: "Conta criada. Confirme o e-mail para entrar — ou desative a confirmação no Supabase para entrar na hora.",
-    };
-  }
-  redirect("/");
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", sessionData.user.id).maybeSingle();
+  redirect(homeFor(profile?.role === "admin" ? "admin" : "vendedor"));
+}
+
+export async function register(): Promise<ActionState> {
+  return { error: "Só o administrador cria o usuário do vendedor." };
 }
 
 export async function logout() {
@@ -101,6 +59,7 @@ const productSchema = z.object({
   name: z.string().trim().min(2, "Dê um nome ao produto."),
   category: z.string().trim().min(1, "Escolha a categoria."),
   price: z.string().trim().min(1, "Informe o preço de venda."),
+  cost: z.string().trim().min(1, "Informe o valor de compra."),
   minStock: z.coerce.number().int().min(0, "O estoque mínimo não pode ser negativo."),
 });
 
@@ -126,13 +85,16 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
     name: formData.get("name"),
     category: formData.get("category"),
     price: formData.get("price"),
+    cost: formData.get("cost"),
     minStock: formData.get("minStock"),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
 
   const price = parseBRLToCents(parsed.data.price);
+  const cost = parseBRLToCents(parsed.data.cost);
   const stock = Number(formData.get("stock") ?? 0);
-  if (price == null) return { error: "Preço inválido. Use 3,50 por exemplo." };
+  if (price == null) return { error: "Preço de venda inválido. Use 3,50 por exemplo." };
+  if (cost == null) return { error: "Valor de compra inválido. Use 2,00 por exemplo." };
   if (!Number.isInteger(stock) || stock < 0) return { error: "Estoque inicial inválido." };
 
   const supabase = await db();
@@ -143,6 +105,7 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
     category: parsed.data.category,
     attributes: details.attributes ?? {},
     sale_price_cents: price,
+    cost_price_cents: cost,
     stock_quantity: stock,
     min_stock: parsed.data.minStock,
   });
@@ -158,11 +121,14 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     name: formData.get("name"),
     category: formData.get("category"),
     price: formData.get("price"),
+    cost: formData.get("cost"),
     minStock: formData.get("minStock"),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   const price = parseBRLToCents(parsed.data.price);
-  if (price == null) return { error: "Preço inválido." };
+  const cost = parseBRLToCents(parsed.data.cost);
+  if (price == null) return { error: "Preço de venda inválido." };
+  if (cost == null) return { error: "Valor de compra inválido." };
 
   const supabase = await db();
   const details = await readAttributes(supabase, parsed.data.category, formData);
@@ -174,6 +140,7 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
       category: parsed.data.category,
       attributes: details.attributes ?? {},
       sale_price_cents: price,
+      cost_price_cents: cost,
       min_stock: parsed.data.minStock,
       active: formData.get("active") === "on",
     })
@@ -206,6 +173,7 @@ export async function registerSale(_prev: ActionState, formData: FormData): Prom
   revalidatePath("/vendas");
   revalidatePath("/produtos");
   revalidatePath("/relatorios");
+  revalidatePath("/financeiro");
   revalidatePath("/");
   return { ok: "Venda registrada e estoque atualizado." };
 }
@@ -220,6 +188,11 @@ export async function registerPurchase(_prev: ActionState, formData: FormData): 
   if (!items.length) return { error: "Adicione pelo menos um produto." };
 
   const supabase = await db();
+  const { data: auth } = await supabase.auth.getUser();
+  const { data: roleRow } = auth.user
+    ? await supabase.from("profiles").select("role").eq("id", auth.user.id).maybeSingle()
+    : { data: null };
+  if (roleRow?.role !== "admin") return { error: "Somente o administrador lança compras." };
   const { error } = await supabase.rpc("register_purchase", {
     p_supplier: String(formData.get("supplier") ?? ""),
     p_note: String(formData.get("note") ?? ""),
@@ -227,7 +200,50 @@ export async function registerPurchase(_prev: ActionState, formData: FormData): 
   });
   if (error) return { error: message(error) };
   revalidatePath("/compras");
+  revalidatePath("/financeiro");
   revalidatePath("/produtos");
   revalidatePath("/");
   return { ok: "Compra lançada e estoque somado." };
+}
+
+export async function setUserRole(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const userId = String(formData.get("userId") ?? "");
+  const role = String(formData.get("role") ?? "");
+  if (role !== "admin" && role !== "vendedor") return { error: "Perfil inválido." };
+  const supabase = await db();
+  const { error } = await supabase.rpc("set_user_role", { p_user_id: userId, p_role: role });
+  if (error) return { error: message(error) };
+  revalidatePath("/equipe");
+  return { ok: "Perfil atualizado." };
+}
+
+export async function createTeamMember(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const parsed = z
+    .object({
+      name: z.string().trim().min(2, "Informe o nome."),
+      username: z
+        .string()
+        .trim()
+        .min(3, "O usuário precisa ter pelo menos 3 letras.")
+        .regex(/^[a-zA-Z0-9._-]+$/, "Use só letras e números no usuário."),
+      password: z.string().min(6, "A senha precisa ter pelo menos 6 caracteres."),
+    })
+    .safeParse({
+      name: formData.get("name"),
+      username: formData.get("username"),
+      password: formData.get("password"),
+    });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+
+  const username = normalizeUsername(parsed.data.username);
+  const supabase = await db();
+  const { error } = await supabase.rpc("create_seller", {
+    p_name: parsed.data.name,
+    p_username: username,
+    p_password: parsed.data.password,
+  });
+  if (error) return { error: message(error) };
+
+  revalidatePath("/equipe");
+  return { ok: `Vendedor ${username} criado. Ele já pode entrar com esse usuário e senha.` };
 }

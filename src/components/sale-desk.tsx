@@ -12,11 +12,11 @@ import { registerSale, type ActionState } from "@/server/actions";
 import type { Product } from "@/server/queries";
 
 export function SaleDesk({
-  products,
-  categories,
+  products = [],
+  categories = [],
 }: {
   products: Product[];
-  categories: { slug: string; name: string }[];
+  categories?: { slug: string; name: string }[];
 }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("todos");
@@ -29,14 +29,14 @@ export function SaleDesk({
   }, [state]);
 
   const visible = useMemo(() => {
-    return products.filter((product) => {
+    return (products ?? []).filter((product) => {
       const matchesCategory = category === "todos" || product.category === category;
       const matchesQuery = product.name.toLowerCase().includes(query.trim().toLowerCase());
       return product.active && matchesCategory && matchesQuery;
     });
   }, [products, category, query]);
 
-  const lines = products
+  const lines = (products ?? [])
     .filter((product) => cart[product.id])
     .map((product) => ({ product, quantity: cart[product.id] }));
   const total = lines.reduce((sum, line) => sum + line.product.sale_price_cents * line.quantity, 0);
@@ -70,7 +70,7 @@ export function SaleDesk({
           <FilterChip active={category === "todos"} onClick={() => setCategory("todos")}>
             Tudo
           </FilterChip>
-          {categories.map((item) => (
+          {(categories ?? []).map((item) => (
             <FilterChip key={item.slug} active={category === item.slug} onClick={() => setCategory(item.slug)}>
               {item.name}
             </FilterChip>

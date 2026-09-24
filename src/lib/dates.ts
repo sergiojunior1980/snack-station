@@ -59,6 +59,33 @@ export function seriesRange(grain: ReportGrain, now = new Date()) {
   return { from, to: tomorrow };
 }
 
+export function bucketKey(value: string | Date, grain: ReportGrain) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const start =
+    grain === "month" ? startOfSaoPauloMonth(date) : grain === "week" ? startOfSaoPauloWeek(date) : startOfSaoPauloDay(date);
+  const { year, month, day } = zonedParts(start);
+  return `${year}-${month}-${day}`;
+}
+
+export function eachBucket(from: Date, to: Date, grain: ReportGrain) {
+  const keys: string[] = [];
+  let cursor =
+    grain === "month" ? startOfSaoPauloMonth(from) : grain === "week" ? startOfSaoPauloWeek(from) : startOfSaoPauloDay(from);
+  while (cursor < to && keys.length < 36) {
+    keys.push(bucketKey(cursor, grain));
+    cursor = grain === "month" ? addMonths(cursor, 1) : addDays(cursor, grain === "week" ? 7 : 1);
+  }
+  return keys;
+}
+
+function addMonths(date: Date, months: number) {
+  const { year, month } = zonedParts(date);
+  const next = new Date(Date.UTC(Number(year), Number(month) - 1 + months, 1));
+  const y = next.getUTCFullYear();
+  const m = String(next.getUTCMonth() + 1).padStart(2, "0");
+  return new Date(`${y}-${m}-01T00:00:00-03:00`);
+}
+
 export function formatBucket(bucket: string, grain: ReportGrain) {
   const date = new Date(`${bucket}T12:00:00-03:00`);
   if (grain === "month") {

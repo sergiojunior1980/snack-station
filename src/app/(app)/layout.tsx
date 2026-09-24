@@ -19,7 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     );
   }
 
-  const { user, name } = await requireUser();
+  const { user, name, role } = await requireUser();
   if (!user) redirect("/login");
-  return <AppShell userName={name}>{children}</AppShell>;
+  return <AppShell userName={name} role={role}>{children}</AppShell>;
 }
