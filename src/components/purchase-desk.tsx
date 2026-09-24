@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
@@ -13,12 +13,12 @@ type Line = { key: string; productId: string; quantity: string; cost: string };
 export function PurchaseDesk({ products, methods }: { products: Product[]; methods: { id: string; name: string }[] }) {
   const [lines, setLines] = useState<Line[]>([{ key: "1", productId: products[0]?.id ?? "", quantity: "1", cost: "" }]);
   const [state, action, pending] = useActionState(registerPurchase, null as ActionState);
+  const [handledState, setHandledState] = useState(state);
 
-  useEffect(() => {
-    if (state?.ok) {
-      setLines([{ key: crypto.randomUUID(), productId: products[0]?.id ?? "", quantity: "1", cost: "" }]);
-    }
-  }, [state, products]);
+  if (state?.ok && state !== handledState) {
+    setHandledState(state);
+    setLines([{ key: crypto.randomUUID(), productId: products[0]?.id ?? "", quantity: "1", cost: "" }]);
+  }
 
   function update(key: string, patch: Partial<Line>) {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));

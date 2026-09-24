@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useActionState } from "react";
 import { Minus, Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -29,13 +29,13 @@ export function SaleDesk({
     { key: "1", method: methods[0]?.id ?? "pix", amount: "" },
   ]);
   const [state, action, pending] = useActionState(registerSale, null as ActionState);
+  const [handledState, setHandledState] = useState(state);
 
-  useEffect(() => {
-    if (state?.ok) {
-      setCart({});
-      setPayments([{ key: crypto.randomUUID(), method: "pix", amount: "" }]);
-    }
-  }, [state]);
+  if (state?.ok && state !== handledState) {
+    setHandledState(state);
+    setCart({});
+    setPayments([{ key: crypto.randomUUID(), method: "pix", amount: "" }]);
+  }
 
   const visible = useMemo(() => {
     return (products ?? []).filter((product) => {
