@@ -94,6 +94,8 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/sergiojunior1980/snack-station:${{ steps.meta.outputs.tag }}
+          # NEXT_PUBLIC_SUPABASE_URL é a raiz do projeto, https://ref.supabase.co,
+          # sem /rest/v1 e sem o endereço do Supabase local.
           build-args: |
             NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
