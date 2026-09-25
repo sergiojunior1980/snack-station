@@ -34,7 +34,7 @@ export function SaleDesk({
   if (state?.ok && state !== handledState) {
     setHandledState(state);
     setCart({});
-    setPayments([{ key: crypto.randomUUID(), method: "pix", amount: "" }]);
+    setPayments([{ key: crypto.randomUUID(), method: methods[0]?.id ?? "pix", amount: "" }]);
   }
 
   const visible = useMemo(() => {
@@ -50,15 +50,15 @@ export function SaleDesk({
     .map((product) => ({ product, quantity: cart[product.id] }));
   const total = lines.reduce((sum, line) => sum + line.product.sale_price_cents * line.quantity, 0);
   const items = JSON.stringify(lines.map((line) => ({ product_id: line.product.id, quantity: line.quantity })));
-  const paid = payments.reduce((sum, item) => {
-    const cents = Math.round(Number(item.amount.replace(/\./g, "").replace(",", ".")) * 100);
-    return sum + (Number.isFinite(cents) ? cents : 0);
-  }, 0);
+  const singlePayment = payments.length === 1;
+  const paid = singlePayment
+    ? total
+    : payments.reduce((sum, item) => sum + parseCents(item.amount), 0);
   const paymentPayload = JSON.stringify(
-    payments
+    (singlePayment ? [{ ...payments[0], amount: centsToInput(total) }] : payments)
       .map((item) => ({
-        method: item.method,
-        amount_cents: Math.round(Number(item.amount.replace(/\./g, "").replace(",", ".")) * 100),
+        method: item.method || methods[0]?.id || "",
+        amount_cents: singlePayment ? total : parseCents(item.amount),
       }))
       .filter((item) => item.amount_cents > 0),
   );
@@ -189,8 +189,9 @@ export function SaleDesk({
               </Select>
               <Input
                 inputMode="decimal"
-                value={item.amount}
+                value={singlePayment ? centsToInput(total) : item.amount}
                 placeholder="0,00"
+                readOnly={singlePayment}
                 onChange={(event) =>
                   setPayments((current) => current.map((row) => (row.key === item.key ? { ...row, amount: event.target.value } : row)))
                 }
@@ -227,6 +228,15 @@ export function SaleDesk({
       </form>
     </div>
   );
+}
+
+function parseCents(amount: string) {
+  const cents = Math.round(Number(amount.replace(/\./g, "").replace(",", ".")) * 100);
+  return Number.isFinite(cents) ? cents : 0;
+}
+
+function centsToInput(cents: number) {
+  return (cents / 100).toFixed(2).replace(".", ",");
 }
 
 function FilterChip({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {

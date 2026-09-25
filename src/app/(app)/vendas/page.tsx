@@ -1,19 +1,17 @@
 import { PageHero } from "@/components/page-hero";
 import { SaleDesk } from "@/components/sale-desk";
-import { Tape } from "@/components/tape";
 import { paymentLabel } from "@/lib/catalog";
 import { formatDateTime } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
-import { cashIsOpen, listCategories, listPaymentMethods, listProducts, listTape, recentSales, requireUser } from "@/server/queries";
+import { cashIsOpen, listCategories, listPaymentMethods, listProducts, recentSales, requireUser } from "@/server/queries";
 
 export default async function SalesPage() {
-  const [{ role }, products, sales, categories, cashOpen, tape, methods] = await Promise.all([
+  const [, products, sales, categories, cashOpen, methods] = await Promise.all([
     requireUser(),
     listProducts(),
     recentSales(8),
     listCategories(),
     cashIsOpen(),
-    listTape("caixa_vendas"),
     listPaymentMethods("recebimento"),
   ]);
 
@@ -48,7 +46,6 @@ export default async function SalesPage() {
           )}
         </ul>
       </section>
-      {role === "admin" ? <Tape title="Fita de caixa e vendas" entries={tape} /> : null}
     </div>
   );
 }
