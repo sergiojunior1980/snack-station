@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { normalizeRole, type Role } from "@/lib/roles";
+import { canUseMenu, defaultSellerMenus, normalizeMenus, normalizeRole, type Role } from "@/lib/roles";
 import type { ReportGrain } from "@/lib/dates";
 
 export type Product = {
@@ -15,7 +15,23 @@ export type Product = {
   active: boolean;
   is_combo?: boolean;
   components?: { product_id: string; quantity: number }[];
+  display_cost_cents?: number;
+  nearest_expires_on?: string | null;
 };
+
+export type CostMode = "media" | "maior";
+
+export function stockUnitCost(
+  lots: { quantity_remaining: number; unit_cost_cents: number }[],
+  mode: CostMode,
+) {
+  const alive = lots.filter((lot) => lot.quantity_remaining > 0);
+  if (alive.length === 0) return 0;
+  if (mode === "maior") return Math.max(...alive.map((lot) => lot.unit_cost_cents));
+  const quantity = alive.reduce((sum, lot) => sum + lot.quantity_remaining, 0);
+  const total = alive.reduce((sum, lot) => sum + lot.quantity_remaining * lot.unit_cost_cents, 0);
+  return quantity > 0 ? Math.round(total / quantity) : 0;
+}
 
 export type CategoryField = {
   key: string;
@@ -36,12 +52,12 @@ export type Category = {
 
 export const requireUser = cache(async function requireUser() {
   const supabase = await createClient();
-  if (!supabase) return { supabase: null, user: null, name: "", role: "vendedor" as Role };
+  if (!supabase) return { supabase: null, user: null, name: "", role: "vendedor" as Role, menus: [...defaultSellerMenus] };
   const { data } = await supabase.auth.getUser();
-  if (!data.user) return { supabase, user: null, name: "", role: "vendedor" as Role };
+  if (!data.user) return { supabase, user: null, name: "", role: "vendedor" as Role, menus: [...defaultSellerMenus] };
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, role")
+    .select("full_name, role, menus")
     .eq("id", data.user.id)
     .maybeSingle();
   return {
@@ -49,6 +65,7 @@ export const requireUser = cache(async function requireUser() {
     user: data.user,
     name: profile?.full_name || data.user.email || "Equipe",
     role: normalizeRole(profile?.role),
+    menus: normalizeMenus(profile?.menus),
   };
 });
 
@@ -73,24 +90,51 @@ export async function listProducts() {
     cost_price_cents: product.cost_price_cents ?? 0,
     is_combo: Boolean(product.is_combo),
   }));
-  const combos = products.filter((product) => product.is_combo);
-  if (combos.length === 0) return products;
-  const { data: parts } = await supabase.from("product_components").select("combo_id, product_id, quantity");
+  const [{ data: parts }, { data: lots }, mode] = await Promise.all([
+    supabase.from("product_components").select("combo_id, product_id, quantity"),
+    supabase.from("stock_lots").select("product_id, quantity_remaining, unit_cost_cents, expires_on").gt("quantity_remaining", 0),
+    costMode(),
+  ]);
+  const pieces = (parts ?? []) as { combo_id: string; product_id: string; quantity: number }[];
+  const byProduct = new Map<string, { quantity_remaining: number; unit_cost_cents: number; expires_on: string | null }[]>();
+  for (const lot of (lots ?? []) as { product_id: string; quantity_remaining: number; unit_cost_cents: number; expires_on: string | null }[]) {
+    const list = byProduct.get(lot.product_id) ?? [];
+    list.push(lot);
+    byProduct.set(lot.product_id, list);
+  }
+  const expiryOf = (productId: string) => {
+    const dates = (byProduct.get(productId) ?? []).map((lot) => lot.expires_on).filter((day): day is string => Boolean(day));
+    return dates.sort()[0] ?? null;
+  };
+  const unit = new Map(products.map((product) => [product.id, stockUnitCost(byProduct.get(product.id) ?? [], mode)]));
   const stock = new Map(products.map((product) => [product.id, product.stock_quantity]));
   return products.map((product) => {
-    if (!product.is_combo) return product;
-    const pieces = ((parts ?? []) as { combo_id: string; product_id: string; quantity: number }[]).filter(
-      (part) => part.combo_id === product.id,
-    );
-    const available = pieces.length
-      ? Math.min(...pieces.map((part) => Math.floor((stock.get(part.product_id) ?? 0) / part.quantity)))
+    const components = pieces
+      .filter((part) => part.combo_id === product.id)
+      .map((part) => ({ product_id: part.product_id, quantity: part.quantity }));
+    if (!product.is_combo) {
+      return { ...product, display_cost_cents: unit.get(product.id) ?? 0, nearest_expires_on: expiryOf(product.id) };
+    }
+    const available = components.length
+      ? Math.min(...components.map((part) => Math.floor((stock.get(part.product_id) ?? 0) / part.quantity)))
       : 0;
+    const display = components.reduce((sum, part) => sum + (unit.get(part.product_id) ?? 0) * part.quantity, 0);
+    const dates = components.map((part) => expiryOf(part.product_id)).filter((day): day is string => Boolean(day));
     return {
       ...product,
       stock_quantity: available,
-      components: pieces.map((part) => ({ product_id: part.product_id, quantity: part.quantity })),
+      components,
+      display_cost_cents: display,
+      nearest_expires_on: dates.sort()[0] ?? null,
     };
   });
+}
+
+export async function costMode(): Promise<CostMode> {
+  const { supabase } = await requireUser();
+  if (!supabase) return "media";
+  const { data } = await supabase.from("app_settings").select("value").eq("key", "stock_cost_mode").maybeSingle();
+  return data?.value === "maior" ? "maior" : "media";
 }
 
 export type PayMethod = { id: string; name: string; counts_as_cash: boolean; settles_balance: boolean; active?: boolean };
@@ -125,16 +169,33 @@ export async function listPaymentMethods(kind: "recebimento" | "pagamento") {
   return rows.length ? rows : fallback;
 }
 
-export async function listTape(module: "caixa_vendas" | "compras_estoque" | "perfis") {
-  const { supabase, role } = await requireUser();
-  if (!supabase || role !== "admin") return [];
+export async function listTape(module: "caixa_vendas" | "compras_estoque" | "perfis" | "cadastro_produtos") {
+  const { supabase, role, menus } = await requireUser();
+  const allowed =
+    role === "admin" ||
+    (module === "caixa_vendas" && canUseMenu(role, menus, "financeiro")) ||
+    (module === "compras_estoque" && canUseMenu(role, menus, "estoque")) ||
+    (module === "cadastro_produtos" && canUseMenu(role, menus, "produtos"));
+  if (!supabase || !allowed) return [];
   const { data } = await supabase
     .from("audit_tape")
-    .select("id, summary, created_at")
+    .select("id, summary, created_at, created_by")
     .eq("module", module)
     .order("id", { ascending: false })
     .limit(40);
-  return (data ?? []) as { id: number; summary: string; created_at: string }[];
+  const rows = (data ?? []) as { id: number; summary: string; created_at: string; created_by: string | null }[];
+  const ids = [...new Set(rows.map((row) => row.created_by).filter((id): id is string => Boolean(id)))];
+  const names = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+    for (const profile of profiles ?? []) names.set(profile.id, profile.full_name);
+  }
+  return rows.map((row) => ({
+    id: row.id,
+    summary: row.summary,
+    created_at: row.created_at,
+    actor: (row.created_by && names.get(row.created_by)) || "Usuário não identificado",
+  }));
 }
 
 export async function cashIsOpen() {
@@ -146,8 +207,8 @@ export async function cashIsOpen() {
 }
 
 export async function accountBalance() {
-  const { supabase, role } = await requireUser();
-  if (!supabase || role !== "admin") return 0;
+  const { supabase, role, menus } = await requireUser();
+  if (!supabase || !canUseMenu(role, menus, "financeiro")) return 0;
   const { data, error } = await supabase.rpc("account_balance");
   if (error) return 0;
   return Number(data ?? 0);
@@ -155,8 +216,16 @@ export async function accountBalance() {
 export async function listTeam() {
   const { supabase, role } = await requireUser();
   if (!supabase || role !== "admin") return [];
-  const { data } = await supabase.from("profiles").select("id, full_name, username, role, created_at").order("full_name");
-  return (data ?? []) as { id: string; full_name: string; username: string | null; role: Role; created_at: string }[];
+  const [{ data }, { data: secrets }] = await Promise.all([
+    supabase.from("profiles").select("id, full_name, username, role, menus, created_at").order("full_name"),
+    supabase.from("seller_passwords").select("user_id, password"),
+  ]);
+  const passwords = new Map(
+    ((secrets ?? []) as { user_id: string; password: string }[]).map((item) => [item.user_id, item.password]),
+  );
+  return ((data ?? []) as { id: string; full_name: string; username: string | null; role: Role; menus: unknown; created_at: string }[]).map(
+    (member) => ({ ...member, menus: normalizeMenus(member.menus), password: passwords.get(member.id) ?? null }),
+  );
 }
 
 export async function listCategories() {
@@ -182,7 +251,7 @@ export async function recentSales(limit = 8) {
   if (!supabase) return [];
   const { data } = await supabase
     .from("sales")
-    .select("id, total_cents, payment_method, created_at, sale_items(product_name, quantity)")
+    .select("id, total_cents, payment_method, created_at, sale_items(product_name, quantity), sale_payments(payment_method, amount_cents)")
     .order("created_at", { ascending: false })
     .limit(limit);
   return data ?? [];
@@ -193,15 +262,15 @@ export async function recentPurchases(limit = 8) {
   if (!supabase) return [];
   const { data } = await supabase
     .from("purchases")
-    .select("id, total_cents, supplier, payment_method, created_at, purchase_items(product_name, quantity)")
+    .select("id, total_cents, supplier, payment_method, created_at, purchased_on, purchase_items(product_id, product_name, quantity, unit_cost_cents, barcode, expires_on)")
     .order("created_at", { ascending: false })
     .limit(limit);
   return data ?? [];
 }
 
 export async function financeEntries(from: Date, to: Date) {
-  const { supabase, role } = await requireUser();
-  if (!supabase || role !== "admin") return { sales: [], purchases: [], movements: [], sessions: [] };
+  const { supabase, role, menus } = await requireUser();
+  if (!supabase || !canUseMenu(role, menus, "financeiro")) return { sales: [], purchases: [], movements: [], sessions: [] };
 
   const [sales, purchases, movements, sessions] = await Promise.all([
     supabase
@@ -251,9 +320,9 @@ export async function financeEntries(from: Date, to: Date) {
 }
 
 export async function cashDesk() {
-  const { supabase, role } = await requireUser();
+  const { supabase, role, menus } = await requireUser();
   const empty = { open: null as null, expectedCents: 0, recent: [] as CashSession[] };
-  if (!supabase || role !== "admin") return empty;
+  if (!supabase || !canUseMenu(role, menus, "financeiro")) return empty;
   const { data: open, error } = await supabase
     .from("cash_sessions")
     .select("id, opened_at, opening_cents, opening_note, closed_at, counted_cents, expected_cents, difference_cents, closing_note")
@@ -291,8 +360,8 @@ export type CashSession = {
 };
 
 export async function stockBoard() {
-  const { supabase, role } = await requireUser();
-  if (!supabase || role !== "admin") return { products: [], lots: [], movements: [], ready: false };
+  const { supabase, role, menus } = await requireUser();
+  if (!supabase || !canUseMenu(role, menus, "estoque")) return { products: [], lots: [], movements: [], ready: false };
   const { data: products, error } = await supabase
     .from("products")
     .select("id, name, stock_quantity, avg_cost_cents, cost_price_cents, active")

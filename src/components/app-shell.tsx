@@ -5,29 +5,36 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BarChart3, LayoutDashboard, LogOut, Package, ShoppingBag, Users, Wallet, Warehouse } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
-import { roleLabel } from "@/lib/roles";
-import type { Role } from "@/lib/roles";
+import { canUseMenu, roleLabel, type MenuId, type Role } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { logout } from "@/server/actions";
 
-const nav = [
-  { href: "/", label: "Início", icon: LayoutDashboard, admin: true, children: [] as { href: string; label: string; admin?: boolean }[] },
-  { href: "/vendas", label: "Vender", icon: ShoppingBag, admin: false, children: [] },
+type NavChild = { href: string; label: string; admin?: boolean; hash?: string; children?: NavChild[] };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  menu?: MenuId;
+  children: NavChild[];
+};
+
+const nav: NavItem[] = [
+  { href: "/", label: "Início", icon: LayoutDashboard, children: [] },
+  { href: "/vendas", label: "Vender", icon: ShoppingBag, menu: "vender", children: [] },
   {
     href: "/produtos",
     label: "Produtos",
     icon: Package,
-    admin: false,
+    menu: "produtos",
     children: [
-      { href: "/produtos", label: "Cadastro" },
-      { href: "/categorias", label: "Categorias", admin: true },
+      { href: "/produtos", label: "Cadastro", children: [{ href: "/categorias", label: "Categorias", admin: true }] },
     ],
   },
   {
-    href: "/estoque",
+    href: "/compras",
     label: "Estoque",
     icon: Warehouse,
-    admin: true,
+    menu: "estoque",
     children: [
       { href: "/estoque", label: "Movimento" },
       { href: "/compras", label: "Compras" },
@@ -37,30 +44,79 @@ const nav = [
     href: "/financeiro",
     label: "Financeiro",
     icon: Wallet,
-    admin: true,
+    menu: "financeiro",
     children: [
       { href: "/financeiro", label: "Caixa", hash: "" },
       { href: "/financeiro", label: "Formas de pagamento", hash: "formas" },
     ],
   },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3, admin: true, children: [] },
-  { href: "/equipe", label: "Equipe", icon: Users, admin: true, children: [] },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3, menu: "relatorios", children: [] },
+  { href: "/equipe", label: "Equipe", icon: Users, children: [] },
 ];
 
-function groupActive(pathname: string, item: (typeof nav)[number]) {
+function childActive(pathname: string, child: NavChild): boolean {
+  if (pathname === child.href || (child.href !== "/" && pathname.startsWith(`${child.href}/`))) return true;
+  return (child.children ?? []).some((item) => childActive(pathname, item));
+}
+
+function groupActive(pathname: string, item: NavItem) {
   if (item.href === "/") return pathname === "/";
   if (pathname === item.href || pathname.startsWith(`${item.href}/`)) return true;
-  return item.children.some((child) => pathname === child.href || pathname.startsWith(`${child.href}/`));
+  return item.children.some((child) => childActive(pathname, child));
+}
+
+function visibleChildren(children: NavChild[], role: Role): NavChild[] {
+  return children
+    .filter((child) => role === "admin" || !child.admin)
+    .map((child) => ({ ...child, children: child.children ? visibleChildren(child.children, role) : undefined }));
+}
+
+function Submenu({ items, pathname, hash, depth }: { items: NavChild[]; pathname: string; hash: string; depth: number }) {
+  return (
+    <div className={cn("mt-1 flex flex-col gap-1", depth === 0 ? "ml-7" : "ml-4")}>
+      {items.map((child) => {
+        const tab = child.hash;
+        const href = tab ? `${child.href}#${tab}` : child.href;
+        const onFinance = child.hash !== undefined;
+        const selected = onFinance
+          ? pathname === "/financeiro" && (tab ? hash === `#${tab}` : hash !== "#formas")
+          : pathname === child.href;
+        const nested = child.children ?? [];
+        return (
+          <div key={child.label}>
+            <Link
+              href={href}
+              onClick={(event) => {
+                if (pathname !== "/financeiro" || !onFinance) return;
+                event.preventDefault();
+                window.history.replaceState(null, "", href);
+                window.dispatchEvent(new HashChangeEvent("hashchange"));
+              }}
+              className={cn(
+                "block rounded-lg px-2 py-1.5 text-xs",
+                selected ? "bg-secondary font-medium text-foreground" : "text-muted-foreground",
+              )}
+            >
+              {child.label}
+            </Link>
+            {nested.length > 0 ? <Submenu items={nested} pathname={pathname} hash={hash} depth={depth + 1} /> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function AppShell({
   children,
   userName,
   role,
+  menus,
 }: {
   children: React.ReactNode;
   userName: string;
   role: Role;
+  menus: MenuId[];
 }) {
   const pathname = usePathname();
   const [hash, setHash] = useState("");
@@ -70,7 +126,7 @@ export function AppShell({
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
   }, [pathname]);
-  const items = nav.filter((item) => role === "admin" || !item.admin);
+  const items = nav.filter((item) => (item.menu ? canUseMenu(role, menus, item.menu) : role === "admin"));
 
   return (
     <div className="mx-auto flex min-h-screen max-w-7xl">
@@ -80,9 +136,10 @@ export function AppShell({
           {items.map((item) => {
             const Icon = item.icon;
             const active = groupActive(pathname, item);
-            const children = item.children.filter((child) => role === "admin" || !("admin" in child && child.admin));
+            const children = visibleChildren(item.children, role);
+            const showChildren = children.length > 1 || children.some((child) => (child.children ?? []).length > 0);
             return (
-              <div key={item.href}>
+              <div key={item.label}>
                 <Link
                   href={item.href}
                   className={cn(
@@ -93,36 +150,7 @@ export function AppShell({
                   <Icon className="size-4" />
                   {item.label}
                 </Link>
-                {active && children.length > 1 ? (
-                  <div className="mt-1 ml-7 flex flex-col gap-1">
-                    {children.map((child) => {
-                      const tab = "hash" in child ? child.hash : undefined;
-                      const href = tab ? `${child.href}#${tab}` : child.href;
-                      const onFinance = child.href === "/financeiro";
-                      const selected = onFinance
-                        ? pathname === "/financeiro" && (tab ? hash === `#${tab}` : hash !== "#formas")
-                        : pathname === child.href;
-                      return (
-                        <Link
-                          key={child.label}
-                          href={href}
-                          onClick={(event) => {
-                            if (pathname !== "/financeiro" || !onFinance) return;
-                            event.preventDefault();
-                            window.history.replaceState(null, "", href);
-                            window.dispatchEvent(new HashChangeEvent("hashchange"));
-                          }}
-                          className={cn(
-                            "rounded-lg px-2 py-1.5 text-xs",
-                            selected ? "bg-secondary font-medium text-foreground" : "text-muted-foreground",
-                          )}
-                        >
-                          {child.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                ) : null}
+                {active && showChildren ? <Submenu items={children} pathname={pathname} hash={hash} depth={0} /> : null}
               </div>
             );
           })}

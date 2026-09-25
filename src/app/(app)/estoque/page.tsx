@@ -33,7 +33,7 @@ export default async function StockPage() {
         <EmptyState title="Estoque ainda não liberado" description="Rode o SQL 006_cash_and_stock.sql no Supabase para lançar entrada, saída e custo médio." />
       ) : (
         <>
-          <StockDesk products={products.filter((product) => product.active)} />
+          <StockDesk products={products} />
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((product) => (
               <article key={product.id} className="rounded-2xl border bg-card px-4 py-3">

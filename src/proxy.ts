@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { homeFor, normalizeRole, sellerCanVisit } from "@/lib/roles";
+import { canVisit, homeFor, normalizeMenus, normalizeRole } from "@/lib/roles";
 import { supabaseEnv } from "@/lib/supabase/env";
 
 const publicPaths = new Set(["/login", "/api/health"]);
@@ -45,17 +45,18 @@ export async function proxy(request: NextRequest) {
   }
 
   if (data.user && isPublic) {
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.user.id).maybeSingle();
-    const redirect = NextResponse.redirect(new URL(homeFor(normalizeRole(profile?.role)), request.url));
+    const { data: profile } = await supabase.from("profiles").select("role, menus").eq("id", data.user.id).maybeSingle();
+    const redirect = NextResponse.redirect(new URL(homeFor(normalizeRole(profile?.role), normalizeMenus(profile?.menus)), request.url));
     response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
     return redirect;
   }
 
   if (data.user) {
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.user.id).maybeSingle();
+    const { data: profile } = await supabase.from("profiles").select("role, menus").eq("id", data.user.id).maybeSingle();
     const role = normalizeRole(profile?.role);
-    if (role !== "admin" && !sellerCanVisit(pathname)) {
-      const redirect = NextResponse.redirect(new URL("/vendas", request.url));
+    const menus = normalizeMenus(profile?.menus);
+    if (!canVisit(role, menus, pathname)) {
+      const redirect = NextResponse.redirect(new URL(homeFor(role, menus), request.url));
       response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
       return redirect;
     }

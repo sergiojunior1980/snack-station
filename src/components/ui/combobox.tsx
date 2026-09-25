@@ -11,6 +11,8 @@ export function Combobox({
   value,
   onChange,
   placeholder = "Escolha",
+  searchPlaceholder = "Buscar categoria",
+  emptyLabel = "Nenhuma categoria encontrada.",
 }: {
   name: string;
   label: string;
@@ -18,6 +20,8 @@ export function Combobox({
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  searchPlaceholder?: string;
+  emptyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -60,12 +64,12 @@ export function Combobox({
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Buscar categoria"
+            placeholder={searchPlaceholder}
             className="mb-2 h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none"
           />
           <ul role="listbox" className="max-h-52 overflow-auto">
             {visible.length === 0 ? (
-              <li className="px-2 py-3 text-sm text-muted-foreground">Nenhuma categoria encontrada.</li>
+              <li className="px-2 py-3 text-sm text-muted-foreground">{emptyLabel}</li>
             ) : (
               visible.map((option) => (
                 <li key={option.value}>

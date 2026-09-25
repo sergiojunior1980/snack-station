@@ -63,13 +63,13 @@ function MethodForm({ kind }: { kind: "recebimento" | "pagamento" }) {
         <Input id={`${kind}-name`} name="name" value={name} onChange={(event) => setName(event.target.value)} required placeholder="Vale-refeição" />
       </div>
       {kind === "recebimento" ? (
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="counts_as_cash" />
+        <label className="flex items-center gap-3 text-sm">
+          <input type="checkbox" name="counts_as_cash" className="mr-3 size-4 shrink-0 accent-primary" />
           Entra no dinheiro do caixa
         </label>
       ) : (
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="settles_balance" />
+        <label className="flex items-center gap-3 text-sm">
+          <input type="checkbox" name="settles_balance" className="mr-3 size-4 shrink-0 accent-primary" />
           Abate o saldo da conta corrente
         </label>
       )}

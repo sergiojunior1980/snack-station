@@ -3,10 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { homeFor } from "@/lib/roles";
+import { homeFor, normalizeMenus, sellerMenus, type MenuId } from "@/lib/roles";
 import { loginToEmail, normalizeUsername } from "@/lib/username";
 import { parseBRLToCents } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
+import { costMode, stockUnitCost } from "@/server/queries";
 
 export type ActionState = { error?: string; ok?: string } | null;
 
@@ -48,8 +49,9 @@ export async function login(_prev: ActionState, formData: FormData): Promise<Act
     password,
   });
   if (error) return { error: message(error) };
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", sessionData.user.id).maybeSingle();
-  redirect(homeFor(profile?.role === "admin" ? "admin" : "vendedor"));
+  const { data: profile } = await supabase.from("profiles").select("role, menus").eq("id", sessionData.user.id).maybeSingle();
+  const role = profile?.role === "admin" ? "admin" : "vendedor";
+  redirect(homeFor(role, normalizeMenus(profile?.menus)));
 }
 
 export async function register(): Promise<ActionState> {
@@ -66,7 +68,6 @@ const productSchema = z.object({
   name: z.string().trim().min(2, "Dê um nome ao produto."),
   category: z.string().trim().min(1, "Escolha a categoria."),
   price: z.string().trim().min(1, "Informe o preço de venda."),
-  cost: z.string().trim().min(1, "Informe o valor de compra."),
   minStock: z.coerce.number().int().min(0, "O estoque mínimo não pode ser negativo."),
 });
 
@@ -107,15 +108,12 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
     name: formData.get("name"),
     category: formData.get("category"),
     price: formData.get("price"),
-    cost: formData.get("cost"),
     minStock: formData.get("minStock"),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
 
   const price = parseBRLToCents(parsed.data.price);
-  const cost = parseBRLToCents(parsed.data.cost);
   if (price == null) return { error: "Preço de venda inválido. Use 3,50 por exemplo." };
-  if (cost == null) return { error: "Valor de compra inválido. Use 2,00 por exemplo." };
   const combo = formData.get("combo") === "on";
   const parts = parseComboParts(formData);
   if (combo && "error" in parts) return { error: parts.error };
@@ -123,15 +121,18 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   const supabase = await db();
   const details = await readAttributes(supabase, parsed.data.category, formData);
   if ("error" in details && details.error) return { error: details.error };
+  const comboCost = combo && "lines" in parts ? await comboCostCents(supabase, parts.lines) : 0;
   const { data: created, error } = await supabase.from("products").insert({
     name: parsed.data.name,
     category: parsed.data.category,
     attributes: details.attributes ?? {},
     sale_price_cents: price,
-    cost_price_cents: combo ? 0 : cost,
+    cost_price_cents: comboCost,
+    avg_cost_cents: comboCost,
     stock_quantity: 0,
     min_stock: combo ? 0 : parsed.data.minStock,
     is_combo: combo,
+    active: true,
   }).select("id").single();
   if (error || !created) return { error: error ? message(error) : "Não foi possível cadastrar." };
   if (combo && "lines" in parts) {
@@ -139,8 +140,11 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
       parts.lines.map((part) => ({ combo_id: created.id, product_id: part.product_id, quantity: part.quantity })),
     );
     if (partError) return { error: message(partError) };
-    await supabase.rpc("append_tape", { p_module: "compras_estoque", p_summary: `Combo criado: ${parsed.data.name}` });
   }
+  await supabase.rpc("append_tape", {
+    p_module: "cadastro_produtos",
+    p_summary: combo ? `Combo criado: ${parsed.data.name}` : `Produto criado: ${parsed.data.name}`,
+  });
   revalidatePath("/produtos");
   revalidatePath("/");
   return { ok: "Produto cadastrado." };
@@ -152,14 +156,11 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     name: formData.get("name"),
     category: formData.get("category"),
     price: formData.get("price"),
-    cost: formData.get("cost"),
     minStock: formData.get("minStock"),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   const price = parseBRLToCents(parsed.data.price);
-  const cost = parseBRLToCents(parsed.data.cost);
   if (price == null) return { error: "Preço de venda inválido." };
-  if (cost == null) return { error: "Valor de compra inválido." };
   const combo = formData.get("combo") === "on";
   const parts = parseComboParts(formData);
   if (combo && "error" in parts) return { error: parts.error };
@@ -174,7 +175,7 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
       category: parsed.data.category,
       attributes: details.attributes ?? {},
       sale_price_cents: price,
-      cost_price_cents: cost,
+      ...(combo && "lines" in parts ? { cost_price_cents: await comboCostCents(supabase, parts.lines) } : {}),
       min_stock: combo ? 0 : parsed.data.minStock,
       active: formData.get("active") === "on",
       is_combo: combo,
@@ -190,9 +191,62 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   } else {
     await supabase.from("product_components").delete().eq("combo_id", id);
   }
+  await supabase.rpc("append_tape", {
+    p_module: "cadastro_produtos",
+    p_summary: `Produto atualizado: ${parsed.data.name}`,
+  });
   revalidatePath("/produtos");
   revalidatePath("/vendas");
   return { ok: "Produto atualizado." };
+}
+
+export async function deleteProduct(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = String(formData.get("id") ?? "");
+  const supabase = await db();
+  const { data: product } = await supabase.from("products").select("name").eq("id", id).maybeSingle();
+  if (!product) return { error: "Produto não encontrado." };
+
+  const { count } = await supabase.from("product_components").select("combo_id", { count: "exact", head: true }).eq("product_id", id);
+  if (count) return { error: "Este produto entra num combo. Tire ele do combo antes de excluir." };
+
+  const { error } = await supabase.from("products").delete().eq("id", id);
+  if (error) {
+    if (error.code === "23503") return { error: "Este produto já entrou em venda ou compra. Não dá para excluir." };
+    return { error: message(error) };
+  }
+  await supabase.rpc("append_tape", { p_module: "cadastro_produtos", p_summary: `Produto excluído: ${product.name}` });
+  revalidatePath("/produtos");
+  revalidatePath("/vendas");
+  revalidatePath("/compras");
+  return { ok: "Produto excluído." };
+}
+
+async function comboCostCents(
+  supabase: Awaited<ReturnType<typeof db>>,
+  lines: { product_id: string; quantity: number }[],
+) {
+  const mode = await costMode();
+  const { data: lots } = await supabase
+    .from("stock_lots")
+    .select("product_id, quantity_remaining, unit_cost_cents")
+    .in("product_id", lines.map((line) => line.product_id))
+    .gt("quantity_remaining", 0);
+  const byProduct = new Map<string, { quantity_remaining: number; unit_cost_cents: number }[]>();
+  for (const lot of lots ?? []) {
+    const list = byProduct.get(lot.product_id) ?? [];
+    list.push(lot);
+    byProduct.set(lot.product_id, list);
+  }
+  return lines.reduce((sum, line) => sum + stockUnitCost(byProduct.get(line.product_id) ?? [], mode) * line.quantity, 0);
+}
+
+export async function saveCostMode(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const mode = formData.get("mode") === "maior" ? "maior" : "media";
+  const supabase = await db();
+  const { error } = await supabase.from("app_settings").upsert({ key: "stock_cost_mode", value: mode });
+  if (error) return { error: message(error) };
+  revalidatePath("/produtos");
+  return { ok: mode === "maior" ? "Custo pelo maior valor em estoque." : "Custo pela média do estoque." };
 }
 
 export async function registerSale(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -225,28 +279,64 @@ export async function registerSale(_prev: ActionState, formData: FormData): Prom
   return { ok: "Venda registrada e estoque atualizado." };
 }
 
+export async function cancelSale(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { error: "Venda não encontrada." };
+  const supabase = await db();
+  const { error } = await supabase.rpc("cancel_sale", { p_sale_id: id });
+  if (error) return { error: message(error) };
+  revalidatePath("/vendas");
+  revalidatePath("/produtos");
+  revalidatePath("/relatorios");
+  revalidatePath("/financeiro");
+  revalidatePath("/estoque");
+  revalidatePath("/");
+  return { ok: "Venda cancelada e estoque devolvido." };
+}
+
 export async function registerPurchase(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  let items: { product_id: string; quantity: number; unit_cost_cents: number }[] = [];
+  let items: { product_id: string; quantity: number; unit_cost_cents: number; barcode?: string; expires_on?: string }[] = [];
   try {
     items = JSON.parse(String(formData.get("items") ?? "[]"));
   } catch {
     return { error: "Lista de compra inválida." };
   }
-  if (!items.length) return { error: "Adicione pelo menos um produto." };
+  const purchasedOn = String(formData.get("purchasedOn") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(purchasedOn)) return { error: "Informe a data da compra." };
+  if (!String(formData.get("supplier") ?? "").trim()) return { error: "Informe o fornecedor." };
+  if (!items.length || items.some((item) => !item.expires_on)) return { error: "Cada item precisa de descrição, quantidade, valor e validade." };
 
   const supabase = await db();
   const { data: auth } = await supabase.auth.getUser();
   const { data: roleRow } = auth.user
-    ? await supabase.from("profiles").select("role").eq("id", auth.user.id).maybeSingle()
+    ? await supabase.from("profiles").select("role, menus").eq("id", auth.user.id).maybeSingle()
     : { data: null };
-  if (roleRow?.role !== "admin") return { error: "Somente o administrador lança compras." };
+  const sellerMenus = normalizeMenus(roleRow?.menus);
+  if (roleRow?.role !== "admin" && !sellerMenus.includes("estoque")) return { error: "Este perfil não lança compras." };
+
+  const invoice = formData.get("invoice");
+  let invoicePath: string | null = null;
+  if (invoice instanceof File && invoice.size > 0) {
+    if (!["image/jpeg", "image/png", "image/webp"].includes(invoice.type)) return { error: "A nota precisa ser uma imagem JPG, PNG ou WebP." };
+    if (invoice.size > 5_242_880) return { error: "A imagem da nota passa de 5 MB." };
+    const ext = invoice.type === "image/png" ? "png" : invoice.type === "image/webp" ? "webp" : "jpg";
+    invoicePath = `${auth.user?.id ?? "nota"}/${crypto.randomUUID()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("notas").upload(invoicePath, invoice, { contentType: invoice.type });
+    if (uploadError) return { error: message(uploadError) };
+  }
+
   const { error } = await supabase.rpc("register_purchase", {
     p_supplier: String(formData.get("supplier") ?? ""),
-    p_note: String(formData.get("note") ?? ""),
+    p_note: "",
     p_items: items,
     p_payment_method: String(formData.get("payment") ?? "dinheiro"),
+    p_purchased_on: purchasedOn,
+    p_invoice_path: invoicePath,
   });
-  if (error) return { error: message(error) };
+  if (error) {
+    if (invoicePath) await supabase.storage.from("notas").remove([invoicePath]);
+    return { error: message(error) };
+  }
   revalidatePath("/compras");
   revalidatePath("/financeiro");
   revalidatePath("/estoque");
@@ -254,6 +344,79 @@ export async function registerPurchase(_prev: ActionState, formData: FormData): 
   revalidatePath("/produtos");
   revalidatePath("/");
   return { ok: "Compra lançada e estoque somado." };
+}
+
+async function readPurchaseForm(formData: FormData) {
+  let items: { product_id: string; quantity: number; unit_cost_cents: number; barcode?: string; expires_on?: string }[] = [];
+  try {
+    items = JSON.parse(String(formData.get("items") ?? "[]"));
+  } catch {
+    return { error: "Lista de compra inválida." } as const;
+  }
+  const purchasedOn = String(formData.get("purchasedOn") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(purchasedOn)) return { error: "Informe a data da compra." } as const;
+  if (!String(formData.get("supplier") ?? "").trim()) return { error: "Informe o fornecedor." } as const;
+  if (!items.length || items.some((item) => !item.expires_on)) {
+    return { error: "Cada item precisa de descrição, quantidade, valor e validade." } as const;
+  }
+  return { items, purchasedOn } as const;
+}
+
+async function storeInvoice(formData: FormData, userId: string | undefined) {
+  const invoice = formData.get("invoice");
+  if (!(invoice instanceof File) || invoice.size === 0) return { path: null as string | null };
+  if (!["image/jpeg", "image/png", "image/webp"].includes(invoice.type)) return { error: "A nota precisa ser uma imagem JPG, PNG ou WebP." };
+  if (invoice.size > 5_242_880) return { error: "A imagem da nota passa de 5 MB." };
+  const ext = invoice.type === "image/png" ? "png" : invoice.type === "image/webp" ? "webp" : "jpg";
+  const path = `${userId ?? "nota"}/${crypto.randomUUID()}.${ext}`;
+  return { path, file: invoice };
+}
+
+export async function updatePurchase(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = String(formData.get("id") ?? "");
+  const parsed = await readPurchaseForm(formData);
+  if ("error" in parsed) return { error: parsed.error };
+  const supabase = await db();
+  const { data: auth } = await supabase.auth.getUser();
+  const stored = await storeInvoice(formData, auth.user?.id);
+  if ("error" in stored && stored.error) return { error: stored.error };
+  let invoicePath: string | null = null;
+  if (stored.path && stored.file) {
+    const { error: uploadError } = await supabase.storage.from("notas").upload(stored.path, stored.file, { contentType: stored.file.type });
+    if (uploadError) return { error: message(uploadError) };
+    invoicePath = stored.path;
+  }
+  const { error } = await supabase.rpc("update_purchase", {
+    p_purchase_id: id,
+    p_supplier: String(formData.get("supplier") ?? ""),
+    p_note: "",
+    p_items: parsed.items,
+    p_payment_method: String(formData.get("payment") ?? "dinheiro"),
+    p_purchased_on: parsed.purchasedOn,
+    p_invoice_path: invoicePath,
+  });
+  if (error) {
+    if (invoicePath) await supabase.storage.from("notas").remove([invoicePath]);
+    return { error: message(error) };
+  }
+  revalidatePath("/compras");
+  revalidatePath("/financeiro");
+  revalidatePath("/estoque");
+  revalidatePath("/produtos");
+  revalidatePath("/");
+  return { ok: "Compra atualizada." };
+}
+
+export async function deletePurchase(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const supabase = await db();
+  const { error } = await supabase.rpc("delete_purchase", { p_purchase_id: String(formData.get("id") ?? "") });
+  if (error) return { error: message(error) };
+  revalidatePath("/compras");
+  revalidatePath("/financeiro");
+  revalidatePath("/estoque");
+  revalidatePath("/produtos");
+  revalidatePath("/");
+  return { ok: "Compra excluída." };
 }
 
 export async function setUserRole(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -265,6 +428,33 @@ export async function setUserRole(_prev: ActionState, formData: FormData): Promi
   if (error) return { error: message(error) };
   revalidatePath("/equipe");
   return { ok: "Perfil atualizado." };
+}
+
+function selectedMenus(formData: FormData) {
+  const allowed = new Set<string>(sellerMenus.map((menu) => menu.id));
+  return formData.getAll("menus").map(String).filter((item): item is MenuId => allowed.has(item));
+}
+
+export async function setSellerMenus(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const userId = String(formData.get("userId") ?? "");
+  const menus = selectedMenus(formData);
+  if (!menus.length) return { error: "Escolha pelo menos um menu." };
+  const supabase = await db();
+  const { error } = await supabase.rpc("set_seller_menus", { p_user_id: userId, p_menus: menus });
+  if (error) return { error: message(error) };
+  revalidatePath("/equipe");
+  return { ok: "Menus do vendedor atualizados." };
+}
+
+export async function resetSellerPassword(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const userId = String(formData.get("userId") ?? "");
+  const password = String(formData.get("password") ?? "");
+  if (password.length < 6) return { error: "A senha precisa ter pelo menos 6 caracteres." };
+  const supabase = await db();
+  const { error } = await supabase.rpc("reset_seller_password", { p_user_id: userId, p_password: password });
+  if (error) return { error: message(error) };
+  revalidatePath("/equipe");
+  return { ok: "Senha redefinida." };
 }
 
 export async function createTeamMember(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -284,6 +474,8 @@ export async function createTeamMember(_prev: ActionState, formData: FormData): 
       password: formData.get("password"),
     });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  const menus = selectedMenus(formData);
+  if (!menus.length) return { error: "Escolha pelo menos um menu." };
 
   const username = normalizeUsername(parsed.data.username);
   const supabase = await db();
@@ -291,6 +483,7 @@ export async function createTeamMember(_prev: ActionState, formData: FormData): 
     p_name: parsed.data.name,
     p_username: username,
     p_password: parsed.data.password,
+    p_menus: menus,
   });
   if (error) return { error: message(error) };
 
