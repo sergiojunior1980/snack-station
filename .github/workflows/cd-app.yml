@@ -96,7 +96,7 @@ jobs:
           tags: ghcr.io/sergiojunior1980/snack-station:${{ steps.meta.outputs.tag }}
           # NEXT_PUBLIC_SUPABASE_URL é a raiz do projeto, https://ref.supabase.co,
           # sem /rest/v1 e sem o endereço do Supabase local.
-          # NEXT_PUBLIC_SUPABASE_ANON_KEY é a anon legada do projeto na nuvem. O GitHub não mostra o valor de novo depois de salvar.
+          # NEXT_PUBLIC_SUPABASE_ANON_KEY é a anon legada do projeto dkthhdzqpvganqnsnwtq. O GitHub oculta o valor depois de salvar.
           build-args: |
             NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
