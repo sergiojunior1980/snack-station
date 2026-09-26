@@ -4,7 +4,7 @@ import { FinanceTabs } from "@/components/finance-tabs";
 import { EmptyState, PageHero, Stat } from "@/components/page-hero";
 import { FinanceChart } from "@/components/finance-chart";
 import { PaymentMethodManager } from "@/components/payment-method-manager";
-import { bucketKey, eachBucket, formatBucket, formatDateTime, periodRange, seriesRange, type ReportGrain, type ReportPeriod } from "@/lib/dates";
+import { addDays, bucketKey, eachBucket, formatBucket, formatDateTime, formatDay, periodRange, seriesRange, type ReportGrain, type ReportPeriod } from "@/lib/dates";
 import { paymentLabel } from "@/lib/catalog";
 import { formatBRL } from "@/lib/money";
 import { Tape } from "@/components/tape";
@@ -116,14 +116,18 @@ export default async function FinancePage({
   const periodLabel = periods.find((item) => item.id === period)?.label;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <FinanceTabs
         caixa={
           <>
             <PageHero
               eyebrow="Caixa"
               title="Faturamento e despesa"
-              description="O que entrou nas vendas, o que saiu nas compras e o movimento do caixa."
+              description={
+                period === "30d"
+                  ? `De ${formatDay(selected.from)} a ${formatDay(addDays(selected.to, -1))}. São 30 dias: o dia de hoje e os 29 anteriores.`
+                  : `De ${formatDay(selected.from)} a ${formatDay(addDays(selected.to, -1))}. O que entrou nas vendas, o que saiu nas compras e o movimento do caixa.`
+              }
             />
             <CashDesk open={desk.open} expectedCents={desk.expectedCents} recent={desk.recent} />
       <div className="flex flex-wrap gap-2">

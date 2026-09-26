@@ -2,7 +2,7 @@ import Link from "next/link";
 import { EmptyState, PageHero, Stat } from "@/components/page-hero";
 import { RevenueChart } from "@/components/revenue-chart";
 import { categoryLabel } from "@/lib/catalog";
-import { formatBucket, periodRange, seriesRange, type ReportGrain, type ReportPeriod } from "@/lib/dates";
+import { addDays, formatBucket, formatDay, periodRange, seriesRange, type ReportGrain, type ReportPeriod } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
 import { revenueSeries, topProducts, unsoldProducts } from "@/server/queries";
 
@@ -45,11 +45,15 @@ export default async function ReportsPage({
   }));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <PageHero
         eyebrow="Faturamento"
         title="O que vendeu e o que ficou parado"
-        description="Os números saem das vendas reais. Semana começa na segunda, no horário de São Paulo."
+        description={
+          period === "30d"
+            ? `De ${formatDay(selected.from)} a ${formatDay(addDays(selected.to, -1))}. São 30 dias: o dia de hoje e os 29 anteriores.`
+            : `De ${formatDay(selected.from)} a ${formatDay(addDays(selected.to, -1))}, no horário de São Paulo.`
+        }
       />
       <div className="flex flex-wrap gap-2">
         {periods.map((item) => (

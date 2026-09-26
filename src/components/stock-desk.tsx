@@ -82,7 +82,7 @@ export function StockDesk({ products }: { products: StockProduct[] }) {
       </div>
       {state?.error ? <p className="text-sm text-destructive sm:col-span-2 lg:col-span-4">{state.error}</p> : null}
       {state?.ok ? <p className="text-sm text-emerald-700 sm:col-span-2 lg:col-span-4">{state.ok}</p> : null}
-      <Button disabled={pending || products.length === 0}>{pending ? "Lançando…" : "Lançar"}</Button>
+      <Button className="sm:col-span-2 lg:col-span-4" disabled={pending || products.length === 0}>{pending ? "Lançando…" : "Lançar"}</Button>
     </form>
   );
 }

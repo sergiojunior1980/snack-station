@@ -13,7 +13,7 @@ export default async function SalesPage() {
   ]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <PageHero
         eyebrow="Balcão"
         title="Registrar venda"

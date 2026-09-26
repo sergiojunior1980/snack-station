@@ -71,7 +71,7 @@ function OpenForm() {
       </div>
       {state?.error ? <p className="text-sm text-destructive sm:col-span-2">{state.error}</p> : null}
       {state?.ok ? <p className="text-sm text-emerald-700 sm:col-span-2">{state.ok}</p> : null}
-      <Button disabled={pending}>{pending ? "Abrindo…" : "Abrir caixa"}</Button>
+      <Button className="sm:col-span-2" disabled={pending}>{pending ? "Abrindo…" : "Abrir caixa"}</Button>
     </form>
   );
 }
@@ -94,7 +94,7 @@ function CloseForm({ open, expectedCents }: { open: CashSession; expectedCents: 
       </div>
       {state?.error ? <p className="text-sm text-destructive sm:col-span-2">{state.error}</p> : null}
       {state?.ok ? <p className="text-sm text-emerald-700 sm:col-span-2">{state.ok}</p> : null}
-      <Button disabled={pending}>{pending ? "Fechando…" : "Fechar caixa"}</Button>
+      <Button className="sm:col-span-2" disabled={pending}>{pending ? "Fechando…" : "Fechar caixa"}</Button>
     </form>
   );
 }

@@ -26,7 +26,7 @@ export function FinanceTabs({ caixa, formas }: { caixa: React.ReactNode; formas:
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -46,8 +46,8 @@ export function FinanceTabs({ caixa, formas }: { caixa: React.ReactNode; formas:
           Formas de pagamento
         </button>
       </div>
-      <div className={tab === "caixa" ? "space-y-8" : "hidden"}>{caixa}</div>
-      <div className={tab === "formas" ? "space-y-8" : "hidden"}>{formas}</div>
+      <div className={tab === "caixa" ? "space-y-4" : "hidden"}>{caixa}</div>
+      <div className={tab === "formas" ? "space-y-4" : "hidden"}>{formas}</div>
     </div>
   );
 }

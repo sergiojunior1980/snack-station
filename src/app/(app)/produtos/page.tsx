@@ -15,7 +15,7 @@ export default async function ProductsPage() {
   const links = [{ href: "/produtos", label: "Cadastro" }];
   if (role === "admin") links.push({ href: "/categorias", label: "Categorias" });
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <PageHero
         eyebrow="Catálogo"
         title="Produtos e estoque"

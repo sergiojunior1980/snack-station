@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { defaultAppearance, isHexColor, type Appearance } from "@/lib/brand";
 import { canUseMenu, defaultSellerMenus, normalizeMenus, normalizeRole, type Role } from "@/lib/roles";
 import type { ReportGrain } from "@/lib/dates";
 
@@ -68,6 +69,23 @@ export const requireUser = cache(async function requireUser() {
     menus: normalizeMenus(profile?.menus),
   };
 });
+
+export async function appearance(): Promise<Appearance> {
+  const supabase = await createClient();
+  if (!supabase) return defaultAppearance;
+  const { data } = await supabase
+    .from("app_settings")
+    .select("key, value")
+    .in("key", ["brand_button_color", "brand_background_color", "brand_logo_url"]);
+  const values = new Map((data ?? []).map((row) => [row.key, row.value]));
+  const buttonColor = values.get("brand_button_color") ?? "";
+  const backgroundColor = values.get("brand_background_color") ?? "";
+  return {
+    buttonColor: isHexColor(buttonColor) ? buttonColor : defaultAppearance.buttonColor,
+    backgroundColor: isHexColor(backgroundColor) ? backgroundColor : defaultAppearance.backgroundColor,
+    logoUrl: values.get("brand_logo_url") ?? "",
+  };
+}
 
 export async function listProducts() {
   const { supabase } = await requireUser();

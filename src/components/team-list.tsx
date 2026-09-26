@@ -88,13 +88,13 @@ function CreateMember() {
         <Label htmlFor="password">Senha</Label>
         <Input id="password" name="password" type="password" required minLength={6} placeholder="Mínimo 6" />
       </div>
-      <div className="flex items-end sm:col-span-2 lg:col-span-1">
-        <Button className="w-full" disabled={pending}>
+      {state?.error ? <p className="text-sm text-destructive sm:col-span-2 lg:col-span-5">{state.error}</p> : null}
+      {state?.ok ? <p className="text-sm text-emerald-700 sm:col-span-2 lg:col-span-5">{state.ok}</p> : null}
+      <div className="sm:col-span-2 lg:col-span-5">
+        <Button disabled={pending}>
           {pending ? "Criando…" : "Criar vendedor"}
         </Button>
       </div>
-      {state?.error ? <p className="text-sm text-destructive sm:col-span-2 lg:col-span-5">{state.error}</p> : null}
-      {state?.ok ? <p className="text-sm text-emerald-700 sm:col-span-2 lg:col-span-5">{state.ok}</p> : null}
     </form>
   );
 }
@@ -135,7 +135,7 @@ function PasswordReset({ member }: { member: { id: string } }) {
   const [state, action, pending] = useActionState(resetSellerPassword, null as ActionState);
 
   return (
-    <form action={action} className="flex flex-wrap items-end gap-3">
+    <form action={action} className="flex flex-col items-start gap-3">
       <input type="hidden" name="userId" value={member.id} />
       <div className="space-y-1.5">
         <Label htmlFor={`new-password-${member.id}`}>Nova senha</Label>

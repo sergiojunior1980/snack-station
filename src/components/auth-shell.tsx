@@ -11,7 +11,7 @@ export function AuthShell({
 }) {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      <aside className="relative hidden overflow-hidden bg-[#b8002e] px-12 py-10 text-white lg:flex lg:flex-col">
+      <aside className="relative hidden overflow-hidden bg-primary px-12 py-10 text-primary-foreground lg:flex lg:flex-col">
         <div
           className="pointer-events-none absolute inset-0"
           style={{
@@ -21,11 +21,11 @@ export function AuthShell({
         />
         <BrandLogo inverted className="relative" href="/login" />
         <div className="relative mt-auto max-w-lg pb-8">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/80">Fisk</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary-foreground/80">Fisk</p>
           <h1 className="font-heading mt-4 text-5xl leading-[1.08] tracking-tight">
             O lanche sai. O estoque acompanha.
           </h1>
-          <p className="mt-5 text-lg leading-relaxed text-white/75">
+          <p className="mt-5 text-lg leading-relaxed text-primary-foreground/75">
             Refrigerante, doce, biscoito e água — cada venda baixa o estoque e cada compra repõe, com o faturamento do dia na mão.
           </p>
         </div>

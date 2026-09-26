@@ -8,7 +8,7 @@ export default async function CategoriesPage() {
   const [categories, tape] = await Promise.all([listCategories(), listTape("compras_estoque")]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <PageHero
         eyebrow="Catálogo"
         title="Categorias"

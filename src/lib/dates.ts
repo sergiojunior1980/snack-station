@@ -97,6 +97,10 @@ export function formatBucket(bucket: string, grain: ReportGrain) {
   return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", timeZone: TZ });
 }
 
+export function formatDay(value: Date) {
+  return value.toLocaleDateString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
 export function formatDateTime(value: string) {
   return new Date(value).toLocaleString("pt-BR", {
     timeZone: TZ,

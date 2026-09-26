@@ -6,6 +6,8 @@ import { z } from "zod";
 import { homeFor, normalizeMenus, sellerMenus, type MenuId } from "@/lib/roles";
 import { loginToEmail, normalizeUsername } from "@/lib/username";
 import { parseBRLToCents } from "@/lib/money";
+import { defaultAppearance, isHexColor } from "@/lib/brand";
+import { supabaseEnv } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import { costMode, stockUnitCost } from "@/server/queries";
 
@@ -238,6 +240,47 @@ async function comboCostCents(
     byProduct.set(lot.product_id, list);
   }
   return lines.reduce((sum, line) => sum + stockUnitCost(byProduct.get(line.product_id) ?? [], mode) * line.quantity, 0);
+}
+
+export async function saveAppearance(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const supabase = await db();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return { error: "Entre para salvar a aparência." };
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", auth.user.id).maybeSingle();
+  if (profile?.role !== "admin") return { error: "Só o administrador muda a aparência." };
+
+  const buttonColor = String(formData.get("buttonColor") ?? "");
+  const backgroundColor = String(formData.get("backgroundColor") ?? "");
+  if (!isHexColor(buttonColor) || !isHexColor(backgroundColor)) return { error: "Escolha uma cor válida." };
+
+  let logoUrl = "";
+  const { data: current } = await supabase.from("app_settings").select("value").eq("key", "brand_logo_url").maybeSingle();
+  logoUrl = current?.value ?? "";
+  if (formData.get("removeLogo") === "on") {
+    await supabase.storage.from("marca").remove(["logo.png", "logo.jpg", "logo.webp"]);
+    logoUrl = "";
+  }
+
+  const file = formData.get("logo");
+  if (file instanceof File && file.size > 0) {
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) return { error: "A logo precisa ser PNG, JPG ou WebP." };
+    if (file.size > 2_097_152) return { error: "A logo passa de 2 MB." };
+    const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+    const path = `logo.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("marca").upload(path, file, { contentType: file.type, upsert: true });
+    if (uploadError) return { error: message(uploadError) };
+    const env = supabaseEnv();
+    logoUrl = env ? `${env.url}/storage/v1/object/public/marca/${path}?v=${Date.now()}` : "";
+  }
+
+  const { error } = await supabase.from("app_settings").upsert([
+    { key: "brand_button_color", value: buttonColor || defaultAppearance.buttonColor },
+    { key: "brand_background_color", value: backgroundColor || defaultAppearance.backgroundColor },
+    { key: "brand_logo_url", value: logoUrl },
+  ]);
+  if (error) return { error: message(error) };
+  revalidatePath("/", "layout");
+  return { ok: "Aparência atualizada." };
 }
 
 export async function saveCostMode(_prev: ActionState, formData: FormData): Promise<ActionState> {

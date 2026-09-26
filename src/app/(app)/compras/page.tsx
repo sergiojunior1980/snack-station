@@ -13,7 +13,7 @@ export default async function PurchasesPage() {
   ]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <PageHero
         eyebrow="Reposição"
         title="Comprar produto"

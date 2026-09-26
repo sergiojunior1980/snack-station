@@ -100,7 +100,7 @@ export function SaleDesk({
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <section className="space-y-4">
         <div className="relative">
           <Search className="pointer-events-none absolute top-3.5 left-3 size-4 text-muted-foreground" />
@@ -131,7 +131,7 @@ export function SaleDesk({
                   type="button"
                   disabled={empty}
                   onClick={() => add(product)}
-                  className="rounded-2xl border bg-card p-4 text-left shadow-[0_8px_20px_rgba(58,36,22,0.04)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-2xl border bg-card p-3 text-left shadow-[0_8px_20px_rgba(58,36,22,0.04)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -145,7 +145,7 @@ export function SaleDesk({
                       {product.stock_quantity} un
                     </Badge>
                   </div>
-                  <div className="mt-4 flex items-end justify-between">
+                  <div className="mt-2 flex items-end justify-between">
                     <p className="font-heading text-xl">{formatBRL(product.sale_price_cents)}</p>
                     {inCart > 0 ? <span className="text-xs font-medium text-primary">{inCart} no pedido</span> : null}
                   </div>
@@ -158,7 +158,7 @@ export function SaleDesk({
 
       <form
         action={action}
-        className="h-fit space-y-4 rounded-2xl border bg-card p-5 shadow-[0_10px_30px_rgba(58,36,22,0.05)] lg:sticky lg:top-6"
+        className="h-fit space-y-3 rounded-2xl border bg-card p-4 shadow-[0_10px_30px_rgba(58,36,22,0.05)] lg:sticky lg:top-4"
       >
         <div>
           <h2 className="font-heading text-2xl">Pedido</h2>
@@ -251,11 +251,11 @@ export function SaleDesk({
           <div className="grid grid-cols-2 gap-2">
             <div className={`rounded-2xl px-3 py-3 ${restante > 0 ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
               <p className="text-xs font-medium uppercase tracking-wide">Faltante</p>
-              <p className="font-heading text-3xl">{formatBRL(restante)}</p>
+              <p className="font-heading text-2xl">{formatBRL(restante)}</p>
             </div>
             <div className={`rounded-2xl px-3 py-3 ${troco > 0 ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
               <p className="text-xs font-medium uppercase tracking-wide">Troco</p>
-              <p className="font-heading text-3xl">{formatBRL(troco)}</p>
+              <p className="font-heading text-2xl">{formatBRL(troco)}</p>
             </div>
           </div>
         </div>

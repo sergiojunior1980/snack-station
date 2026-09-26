@@ -195,14 +195,9 @@ function ProductForm({
       }}
     >
       {notice ? <Notice message={notice} onClose={() => setNotice("")} /> : null}
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="font-heading text-xl">Novo produto</h2>
-          <p className="text-sm text-muted-foreground">O estoque entra pela tela de Compras. Aqui fica só o cadastro.</p>
-        </div>
-        <Button disabled={pending || categories.length === 0}>
-          {pending ? "Salvando…" : "Cadastrar produto"}
-        </Button>
+      <div className="mb-3">
+        <h2 className="font-heading text-xl">Novo produto</h2>
+        <p className="text-sm text-muted-foreground">O estoque entra pela tela de Compras. Aqui fica só o cadastro.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Nome" name="name" placeholder="Coca-Cola" value={name} onChange={(event) => setName(event.target.value)} />
@@ -229,6 +224,9 @@ function ProductForm({
         <p className="mt-3 text-sm text-destructive">Rode o SQL de categorias no Supabase para liberar o cadastro.</p>
       ) : null}
       {state?.ok ? <p className="mt-3 text-sm text-emerald-700">{state.ok}</p> : null}
+      <Button className="mt-3" disabled={pending || categories.length === 0}>
+        {pending ? "Salvando…" : "Cadastrar produto"}
+      </Button>
     </form>
   );
 }

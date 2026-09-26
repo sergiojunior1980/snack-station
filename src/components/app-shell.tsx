@@ -134,7 +134,7 @@ export function AppShell({
     <BrowserSession>
     <div className="mx-auto flex min-h-screen max-w-7xl">
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border/70 bg-card/70 p-5 md:flex">
-        <BrandLogo className="mb-8" />
+        <BrandLogo className="mb-4" />
         <nav className="flex flex-1 flex-col gap-1">
           {items.map((item) => {
             const Icon = item.icon;
@@ -146,7 +146,7 @@ export function AppShell({
                 <Link
                   href={item.href}
                   className={cn(
-                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
+                    "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors",
                     active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                   )}
                 >
@@ -178,7 +178,7 @@ export function AppShell({
             </button>
           </form>
         </header>
-        <main className="flex-1 px-4 py-6 pb-24 md:px-8 md:pb-10">{children}</main>
+        <main className="flex-1 px-4 py-4 pb-20 md:px-5 md:pb-6">{children}</main>
         <nav className={`fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-background/95 px-1 py-2 backdrop-blur md:hidden ${items.length <= 2 ? "grid-cols-2" : items.length > 6 ? "grid-cols-4" : "grid-cols-6"}`}>
           {items.map((item) => {
             const Icon = item.icon;

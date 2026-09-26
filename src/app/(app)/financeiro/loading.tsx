@@ -1,6 +1,6 @@
 export default function FinanceLoading() {
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <div className="space-y-3">
         <div className="h-3 w-24 animate-pulse rounded-full bg-muted" />
         <div className="h-10 w-64 animate-pulse rounded-2xl bg-muted" />

@@ -21,7 +21,7 @@ export default async function StockPage() {
   const names = new Map(products.map((product) => [product.id, product.name]));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <StockNotice />
       <ModuleNav items={[{ href: "/estoque", label: "Movimento" }, { href: "/compras", label: "Compras" }]} />
       <PageHero
