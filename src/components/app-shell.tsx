@@ -7,6 +7,8 @@ import { BarChart3, LayoutDashboard, LogOut, Package, ShoppingBag, Users, Wallet
 import { BrandLogo } from "@/components/brand-logo";
 import { canUseMenu, roleLabel, type MenuId, type Role } from "@/lib/roles";
 import { cn } from "@/lib/utils";
+import { clearSessionMark } from "@/lib/browser-session";
+import { BrowserSession } from "@/components/browser-session";
 import { logout } from "@/server/actions";
 
 type NavChild = { href: string; label: string; admin?: boolean; hash?: string; children?: NavChild[] };
@@ -129,6 +131,7 @@ export function AppShell({
   const items = nav.filter((item) => (item.menu ? canUseMenu(role, menus, item.menu) : role === "admin"));
 
   return (
+    <BrowserSession>
     <div className="mx-auto flex min-h-screen max-w-7xl">
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border/70 bg-card/70 p-5 md:flex">
         <BrandLogo className="mb-8" />
@@ -158,7 +161,7 @@ export function AppShell({
         <div className="mt-auto rounded-2xl bg-secondary/80 p-3">
           <p className="truncate text-sm font-medium">{userName}</p>
           <p className="text-xs text-muted-foreground">{roleLabel(role)}</p>
-          <form action={logout}>
+          <form action={logout} onSubmit={() => clearSessionMark()}>
             <button type="submit" className="mt-2 flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
               <LogOut className="size-3.5" /> Sair
             </button>
@@ -169,7 +172,7 @@ export function AppShell({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-border/70 bg-card/80 px-4 py-3 md:hidden">
           <BrandLogo />
-          <form action={logout}>
+          <form action={logout} onSubmit={() => clearSessionMark()}>
             <button type="submit" className="text-sm text-muted-foreground">
               Sair
             </button>
@@ -194,5 +197,6 @@ export function AppShell({
         </nav>
       </div>
     </div>
+    </BrowserSession>
   );
 }

@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { canVisit, homeFor, normalizeMenus, normalizeRole } from "@/lib/roles";
 import { supabaseEnv } from "@/lib/supabase/env";
+import { browserSessionOptions } from "@/lib/supabase/session-cookie";
 
 const publicPaths = new Set(["/login", "/api/health"]);
 
@@ -19,7 +20,7 @@ export async function proxy(request: NextRequest) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         response = NextResponse.next({ request });
         cookiesToSet.forEach(({ name, value, options }) => {
-          response.cookies.set(name, value, options);
+          response.cookies.set(name, value, browserSessionOptions(options));
         });
       },
     },
@@ -31,7 +32,7 @@ export async function proxy(request: NextRequest) {
   if (pathname === "/cadastro") {
     const redirect = NextResponse.redirect(new URL("/login", request.url));
     response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
-    return redirect;
+    return dropPersistentSession(redirect, request);
   }
 
   const isPublic = publicPaths.has(pathname);
@@ -41,14 +42,14 @@ export async function proxy(request: NextRequest) {
     redirectUrl.search = request.nextUrl.search;
     const redirect = NextResponse.redirect(redirectUrl);
     response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
-    return redirect;
+    return dropPersistentSession(redirect, request);
   }
 
   if (data.user && isPublic) {
     const { data: profile } = await supabase.from("profiles").select("role, menus").eq("id", data.user.id).maybeSingle();
     const redirect = NextResponse.redirect(new URL(homeFor(normalizeRole(profile?.role), normalizeMenus(profile?.menus)), request.url));
     response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
-    return redirect;
+    return dropPersistentSession(redirect, request);
   }
 
   if (data.user) {
@@ -58,10 +59,22 @@ export async function proxy(request: NextRequest) {
     if (!canVisit(role, menus, pathname)) {
       const redirect = NextResponse.redirect(new URL(homeFor(role, menus), request.url));
       response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
-      return redirect;
+      return dropPersistentSession(redirect, request);
     }
   }
 
+  return dropPersistentSession(response, request);
+}
+
+function dropPersistentSession(response: NextResponse, request: NextRequest) {
+  for (const cookie of request.cookies.getAll()) {
+    if (!cookie.name.startsWith("sb-") || !cookie.value) continue;
+    response.cookies.set(cookie.name, cookie.value, {
+      path: "/",
+      sameSite: "lax",
+      httpOnly: false,
+    });
+  }
   return response;
 }
 
