@@ -101,6 +101,19 @@ export function formatDay(value: Date) {
   return value.toLocaleDateString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+export function dayStamp(date: Date) {
+  const { year, month, day } = zonedParts(date);
+  return `${year}-${month}-${day}`;
+}
+
+export function inclusiveRange(start: string, end: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return null;
+  const from = new Date(`${start}T00:00:00-03:00`);
+  const last = new Date(`${end}T00:00:00-03:00`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(last.getTime()) || last < from) return null;
+  return { from, to: addDays(last, 1) };
+}
+
 export function formatDateTime(value: string) {
   return new Date(value).toLocaleString("pt-BR", {
     timeZone: TZ,

@@ -39,7 +39,7 @@ export function Combobox({
   }, []);
 
   return (
-    <div ref={rootRef} className="relative space-y-1.5">
+    <div ref={rootRef} className="relative space-y-1">
       <label className="text-sm font-medium" htmlFor={listId}>
         {label}
       </label>
@@ -53,7 +53,7 @@ export function Combobox({
           setOpen((current) => !current);
           setQuery("");
         }}
-        className="flex h-11 w-full items-center justify-between rounded-xl border bg-card px-3 text-left text-sm"
+        className="flex h-9 w-full items-center justify-between rounded-lg border bg-card px-2.5 text-left text-sm"
       >
         <span className={selected ? "" : "text-muted-foreground"}>{selected?.label ?? placeholder}</span>
         <ChevronDown className="size-4 text-muted-foreground" />

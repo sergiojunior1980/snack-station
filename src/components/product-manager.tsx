@@ -68,12 +68,12 @@ export function ProductManager({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {admin ? <CostModeForm mode={costMode} /> : null}
       <ProductForm categories={categories} products={products} costMode={costMode} />
-      <div className="space-y-3 rounded-2xl border bg-card p-4">
+      <div className="space-y-2 rounded-xl border bg-card p-3">
         <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar produto ou fabricante" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <FilterSelect label="Ordenar" value={sort} onChange={setSort}>
             <option value="nome">Nome</option>
             <option value="validade">Validade</option>
@@ -98,12 +98,12 @@ export function ProductManager({
             </Button>
           </div>
         </div>
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid gap-2 lg:grid-cols-2">
           <PriceFilter label="Preço de compra" op={costOp} setOp={setCostOp} a={costA} setA={setCostA} b={costB} setB={setCostB} />
           <PriceFilter label="Preço de venda" op={saleOp} setOp={setSaleOp} a={saleA} setA={setSaleA} b={saleB} setB={setSaleB} />
         </div>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-2 md:grid-cols-2">
         {products.length === 0 ? (
           <p className="rounded-2xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground md:col-span-2">
             Cadastre o primeiro produto acima.
@@ -114,7 +114,7 @@ export function ProductManager({
           </p>
         ) : (
           visible.map((product) => (
-            <article key={product.id} className={cn("rounded-2xl border bg-card p-4", editing === product.id && "md:col-span-2")}>
+            <article key={product.id} className={cn("rounded-xl border bg-card p-3", editing === product.id && "md:col-span-2")}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -148,6 +148,35 @@ export function ProductManager({
   );
 }
 
+type ProductLine = {
+  key: string;
+  name: string;
+  brand: string;
+  category: string;
+  volume: string;
+  price: string;
+  minStock: string;
+  combo: boolean;
+  parts: { key: string; productId: string; quantity: string }[];
+};
+
+function blankProduct(key: string): ProductLine {
+  return {
+    key,
+    name: "",
+    brand: "",
+    category: "",
+    volume: "",
+    price: "",
+    minStock: "5",
+    combo: false,
+    parts: [
+      { key: `${key}-a`, productId: "", quantity: "1" },
+      { key: `${key}-b`, productId: "", quantity: "1" },
+    ],
+  };
+}
+
 function ProductForm({
   categories,
   products,
@@ -158,74 +187,168 @@ function ProductForm({
   costMode: CostMode;
 }) {
   const [state, action, pending] = useActionState(createProduct, null as ActionState);
-  const [name, setName] = useState("");
-  const [brand, setBrand] = useState("");
-  const [category, setCategory] = useState("");
-  const [volume, setVolume] = useState("");
-  const [price, setPrice] = useState("");
-  const [minStock, setMinStock] = useState("5");
-  const [combo, setCombo] = useState(false);
+  const [lines, setLines] = useState<ProductLine[]>([blankProduct("1")]);
   const [notice, setNotice] = useState("");
   const [seen, setSeen] = useState(state);
-  const liquid = categories.find((item) => item.slug === category)?.fields.some((field) => field.key === "volume_ml") ?? false;
+  const nextKey = useRef(2);
+  const simples = products.filter((item) => !item.is_combo);
+  const items = lines.map((line) => ({
+    name: line.name,
+    brand: line.brand,
+    category: line.category,
+    volume: line.volume,
+    price: line.price,
+    minStock: Number(line.minStock),
+    combo: line.combo,
+    parts: line.combo
+      ? line.parts
+          .map((part) => ({ product_id: part.productId, quantity: Number(part.quantity) }))
+          .filter((part) => part.product_id && part.quantity > 0)
+      : [],
+  }));
 
   if (state && state !== seen) {
     setSeen(state);
     if (state.error) setNotice(state.error);
     if (state.ok) {
-      setName("");
-      setBrand("");
-      setCategory("");
-      setVolume("");
-      setPrice("");
-      setMinStock("5");
-      setCombo(false);
+      setLines([blankProduct("1")]);
+      nextKey.current = 2;
     }
+  }
+
+  function patch(key: string, next: Partial<ProductLine>) {
+    setLines((current) => current.map((line) => (line.key === key ? { ...line, ...next } : line)));
   }
 
   return (
     <form
       action={action}
-      className="rounded-2xl border bg-card p-4"
+      className="space-y-2 rounded-xl border bg-card p-3"
       onSubmit={(event) => {
-        const message = productIssues({ name, brand, category, price, minStock, volume, liquid, combo, form: event.currentTarget });
-        if (!message) return;
-        event.preventDefault();
-        setNotice(message);
+        for (const line of lines) {
+          const liquid = categories.find((item) => item.slug === line.category)?.fields.some((field) => field.key === "volume_ml") ?? false;
+          const message = productIssues({
+            name: line.name,
+            brand: line.brand,
+            category: line.category,
+            price: line.price,
+            minStock: line.minStock,
+            volume: line.volume,
+            liquid,
+            combo: line.combo,
+            parts: line.parts.map((part) => ({ product_id: part.productId, quantity: Number(part.quantity) })),
+          });
+          if (!message) continue;
+          event.preventDefault();
+          setNotice(`Item ${lines.indexOf(line) + 1}: ${message}`);
+          return;
+        }
       }}
     >
+      <input type="hidden" name="items" value={JSON.stringify(items)} />
       {notice ? <Notice message={notice} onClose={() => setNotice("")} /> : null}
-      <div className="mb-3">
-        <h2 className="font-heading text-xl">Novo produto</h2>
-        <p className="text-sm text-muted-foreground">O estoque entra pela tela de Compras. Aqui fica só o cadastro.</p>
+      <div>
+        <h2 className="font-heading text-lg">Novo produto</h2>
+        <p className="text-sm text-muted-foreground">
+          Adicione um ou mais itens e cadastre todos de uma vez. O custo {costMode === "maior" ? "usa o maior valor em estoque" : "entra pela média das compras"}.
+        </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Nome" name="name" placeholder="Coca-Cola" value={name} onChange={(event) => setName(event.target.value)} />
-        <Field label="Marca" name="brand" placeholder="Coca-Cola" value={brand} onChange={(event) => setBrand(event.target.value)} />
-        <Combobox
-          name="category"
-          label="Categoria"
-          placeholder="Escolha a categoria"
-          value={category}
-          onChange={setCategory}
-          options={categories.map((item) => ({ value: item.slug, label: item.name }))}
-        />
-        {liquid ? <Field label="Tamanho (ml)" name="attr_volume_ml" type="number" min={1} step="1" placeholder="350" value={volume} onChange={(event) => setVolume(event.target.value)} /> : null}
-        {combo ? null : <ReadOnlyCost cents={0} hint={costHint(costMode)} />}
-        <Field label="Valor de venda" name="price" placeholder="5,00" value={price} onChange={(event) => setPrice(event.target.value)} />
-        <Field label="Avisar quando chegar a" name="minStock" placeholder="5" type="number" min={0} value={minStock} onChange={(event) => setMinStock(event.target.value)} />
-        <label className="flex items-center gap-3 text-sm sm:col-span-2 lg:col-span-4">
-          <input type="checkbox" name="combo" checked={combo} onChange={(event) => setCombo(event.target.checked)} className="mr-3 size-4 shrink-0 accent-[var(--primary)]" />
-          Este produto é um combo
-        </label>
-        {combo ? <ComboParts products={products.filter((item) => !item.is_combo)} /> : null}
-      </div>
-      {categories.length === 0 ? (
-        <p className="mt-3 text-sm text-destructive">Rode o SQL de categorias no Supabase para liberar o cadastro.</p>
-      ) : null}
-      {state?.ok ? <p className="mt-3 text-sm text-emerald-700">{state.ok}</p> : null}
-      <Button className="mt-3" disabled={pending || categories.length === 0}>
-        {pending ? "Salvando…" : "Cadastrar produto"}
+      {lines.map((line, index) => {
+        const liquid = categories.find((item) => item.slug === line.category)?.fields.some((field) => field.key === "volume_ml") ?? false;
+        return (
+          <div key={line.key} className="space-y-2 rounded-lg border p-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium">Item {index + 1}</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={lines.length === 1}
+                onClick={() => setLines((current) => (current.length === 1 ? current : current.filter((item) => item.key !== line.key)))}
+              >
+                Excluir
+              </Button>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              <Field label="Nome" name={`name-${line.key}`} placeholder="Coca-Cola" value={line.name} onChange={(event) => patch(line.key, { name: event.target.value })} />
+              <Field label="Marca" name={`brand-${line.key}`} placeholder="Coca-Cola" value={line.brand} onChange={(event) => patch(line.key, { brand: event.target.value })} />
+              <Combobox
+                name={`category-${line.key}`}
+                label="Categoria"
+                placeholder="Escolha a categoria"
+                value={line.category}
+                onChange={(category) => patch(line.key, { category })}
+                options={categories.map((item) => ({ value: item.slug, label: item.name }))}
+              />
+              {liquid ? (
+                <Field
+                  label="Tamanho (ml)"
+                  name={`volume-${line.key}`}
+                  type="number"
+                  min={1}
+                  step="1"
+                  placeholder="350"
+                  value={line.volume}
+                  onChange={(event) => patch(line.key, { volume: event.target.value })}
+                />
+              ) : null}
+              <Field label="Valor de venda" name={`price-${line.key}`} placeholder="5,00" value={line.price} onChange={(event) => patch(line.key, { price: event.target.value })} />
+              {line.combo ? null : (
+                <Field
+                  label="Avisar quando chegar a"
+                  name={`min-${line.key}`}
+                  placeholder="5"
+                  type="number"
+                  min={0}
+                  value={line.minStock}
+                  onChange={(event) => patch(line.key, { minStock: event.target.value })}
+                />
+              )}
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={line.combo}
+                onChange={(event) =>
+                  patch(line.key, {
+                    combo: event.target.checked,
+                    parts: event.target.checked
+                      ? [
+                          { key: `${line.key}-a`, productId: simples[0]?.id ?? "", quantity: "1" },
+                          { key: `${line.key}-b`, productId: simples[1]?.id ?? "", quantity: "1" },
+                        ]
+                      : line.parts,
+                  })
+                }
+                className="size-4 shrink-0 accent-[var(--primary)]"
+              />
+              Este produto é um combo
+            </label>
+            {line.combo ? (
+              <ComboParts
+                products={simples}
+                value={line.parts}
+                onChange={(parts) => patch(line.key, { parts })}
+              />
+            ) : null}
+          </div>
+        );
+      })}
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={() => {
+          const key = String(nextKey.current);
+          nextKey.current += 1;
+          setLines((current) => [...current, blankProduct(key)]);
+        }}
+      >
+        Adicionar item
+      </Button>
+      {categories.length === 0 ? <p className="text-sm text-destructive">Rode o SQL de categorias no Supabase para liberar o cadastro.</p> : null}
+      {state?.ok ? <p className="text-sm text-emerald-700">{state.ok}</p> : null}
+      <Button disabled={pending || categories.length === 0}>
+        {pending ? "Salvando…" : lines.length > 1 ? "Cadastrar produtos" : "Cadastrar produto"}
       </Button>
     </form>
   );
@@ -331,11 +454,17 @@ function EditProduct({
 function ComboParts({
   products,
   initial,
+  name = "parts",
+  value,
+  onChange,
 }: {
   products: Product[];
   initial?: { product_id: string; quantity: number }[];
+  name?: string;
+  value?: { key: string; productId: string; quantity: string }[];
+  onChange?: (parts: { key: string; productId: string; quantity: string }[]) => void;
 }) {
-  const [parts, setParts] = useState(
+  const [inner, setInner] = useState(
     initial && initial.length >= 2
       ? initial.map((part) => ({ key: part.product_id, productId: part.product_id, quantity: String(part.quantity) }))
       : [
@@ -343,6 +472,16 @@ function ComboParts({
           { key: "2", productId: products[1]?.id ?? "", quantity: "1" },
         ],
   );
+  const parts = value ?? inner;
+  function setParts(
+    next:
+      | { key: string; productId: string; quantity: string }[]
+      | ((current: { key: string; productId: string; quantity: string }[]) => { key: string; productId: string; quantity: string }[]),
+  ) {
+    const resolved = typeof next === "function" ? next(parts) : next;
+    if (onChange) onChange(resolved);
+    else setInner(resolved);
+  }
   const payload = parts
     .map((part) => ({ product_id: part.productId, quantity: Number(part.quantity) }))
     .filter((part) => part.product_id && part.quantity > 0);
@@ -356,7 +495,7 @@ function ComboParts({
 
   return (
     <div className="space-y-2 sm:col-span-2 lg:col-span-4">
-      <input type="hidden" name="parts" value={JSON.stringify(payload)} />
+      {onChange ? null : <input type="hidden" name={name} value={JSON.stringify(payload)} />}
       <ReadOnlyCost cents={cost} hint="Soma do custo dos produtos que formam o combo." />
       <p className="text-sm text-muted-foreground">Inclua dois ou mais produtos já cadastrados. Cada um precisa ser diferente.</p>
       {parts.map((part) => (
@@ -434,17 +573,11 @@ function categoryName(categories: Category[], slug: string) {
   return categories.find((item) => item.slug === slug)?.name ?? categoryLabel(slug);
 }
 
-function costHint(mode: CostMode) {
-  return mode === "maior"
-    ? "Maior custo entre as unidades ainda em estoque. Entra pelas compras."
-    : "Média das unidades ainda em estoque. Entra pelas compras.";
-}
-
 function ReadOnlyCost({ cents, hint }: { cents: number; hint?: string }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       <Label>Valor médio de compra</Label>
-      <p className="flex h-10 items-center rounded-xl border bg-muted/40 px-3 text-sm">{formatBRL(cents)}</p>
+      <p className="flex h-9 items-center rounded-lg border bg-muted/40 px-2.5 text-sm">{formatBRL(cents)}</p>
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -453,8 +586,8 @@ function ReadOnlyCost({ cents, hint }: { cents: number; hint?: string }) {
 function CostModeForm({ mode }: { mode: CostMode }) {
   const [state, action, pending] = useActionState(saveCostMode, null as ActionState);
   return (
-    <form action={action} className="flex flex-wrap items-end gap-3 rounded-2xl border bg-card p-4">
-      <div className="space-y-1.5">
+    <form action={action} className="flex flex-wrap items-end gap-2 rounded-xl border bg-card p-3">
+      <div className="space-y-1">
         <Label htmlFor="mode">Cálculo do custo de compra</Label>
         <Select id="mode" name="mode" defaultValue={mode}>
           <option value="media">Média dos itens comprados em estoque</option>
@@ -477,7 +610,8 @@ function productIssues(input: {
   volume: string;
   liquid: boolean;
   combo: boolean;
-  form: HTMLFormElement;
+  form?: HTMLFormElement;
+  parts?: { product_id: string; quantity: number }[];
 }) {
   if (input.name.trim().length < 2) return "Dê um nome ao produto.";
   if (input.brand.trim().length < 2) return "Informe a marca.";
@@ -492,11 +626,14 @@ function productIssues(input: {
     if (!input.volume.trim() || !Number.isFinite(amount) || amount <= 0) return "Informe o tamanho em ml.";
   }
   if (input.combo) {
-    let parts: { product_id: string; quantity: number }[] = [];
-    try {
-      parts = JSON.parse(String(new FormData(input.form).get("parts") ?? "[]"));
-    } catch {
-      return "Monte o combo com produtos já cadastrados.";
+    let parts = input.parts ?? [];
+    if (!input.parts) {
+      if (!input.form) return "Monte o combo com produtos já cadastrados.";
+      try {
+        parts = JSON.parse(String(new FormData(input.form).get("parts") ?? "[]"));
+      } catch {
+        return "Monte o combo com produtos já cadastrados.";
+      }
     }
     const lines = parts.filter((part) => part.product_id && part.quantity > 0);
     if (new Set(lines.map((part) => part.product_id)).size < 2) return "O combo precisa de dois ou mais produtos diferentes, mesmo sem estoque.";
@@ -540,7 +677,7 @@ function FilterSelect({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       <Label>{label}</Label>
       <Select value={value} onChange={(event) => onChange(event.target.value)}>{children}</Select>
     </div>
@@ -573,12 +710,12 @@ function PriceFilter({
         <option value="lt">Menor que</option>
         <option value="between">Maior e menor que</option>
       </FilterSelect>
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         <Label>{op === "between" ? "De" : "Valor"}</Label>
         <Input value={a} onChange={(event) => setA(event.target.value)} placeholder="0,00" disabled={!op} />
       </div>
       {op === "between" ? (
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           <Label>Até</Label>
           <Input value={b} onChange={(event) => setB(event.target.value)} placeholder="0,00" />
         </div>
@@ -589,7 +726,7 @@ function PriceFilter({
 
 function Field({ label, ...props }: React.ComponentProps<"input"> & { label: string }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       <Label htmlFor={props.name}>{label}</Label>
       <Input id={props.name} {...props} />
     </div>

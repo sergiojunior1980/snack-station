@@ -6,6 +6,7 @@ export const sellerMenus = [
   { id: "estoque", label: "Estoque", prefixes: ["/compras", "/estoque"] },
   { id: "financeiro", label: "Financeiro", prefixes: ["/financeiro"] },
   { id: "relatorios", label: "Relatórios", prefixes: ["/relatorios"] },
+  { id: "configuracoes", label: "Configurações", prefixes: ["/configuracoes"] },
 ] as const;
 
 export type MenuId = (typeof sellerMenus)[number]["id"];

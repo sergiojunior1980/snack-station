@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart3, LayoutDashboard, LogOut, Package, ShoppingBag, Users, Wallet, Warehouse } from "lucide-react";
+import { BarChart3, LayoutDashboard, LogOut, Package, Settings, ShoppingBag, Users, Wallet, Warehouse } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { canUseMenu, roleLabel, type MenuId, type Role } from "@/lib/roles";
 import { cn } from "@/lib/utils";
@@ -53,6 +53,7 @@ const nav: NavItem[] = [
     ],
   },
   { href: "/relatorios", label: "Relatórios", icon: BarChart3, menu: "relatorios", children: [] },
+  { href: "/configuracoes", label: "Configurações", icon: Settings, menu: "configuracoes", children: [] },
   { href: "/equipe", label: "Equipe", icon: Users, children: [] },
 ];
 
@@ -178,7 +179,7 @@ export function AppShell({
             </button>
           </form>
         </header>
-        <main className="flex-1 px-4 py-4 pb-20 md:px-5 md:pb-6">{children}</main>
+        <main className="flex-1 px-3 py-3 pb-16 md:px-4 md:pb-4">{children}</main>
         <nav className={`fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-background/95 px-1 py-2 backdrop-blur md:hidden ${items.length <= 2 ? "grid-cols-2" : items.length > 6 ? "grid-cols-4" : "grid-cols-6"}`}>
           {items.map((item) => {
             const Icon = item.icon;

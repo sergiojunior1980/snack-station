@@ -106,19 +106,19 @@ export function PurchaseDesk({
 
   return (
     <>
-    <form action={action} className="space-y-4 rounded-2xl border bg-card p-5">
+    <form action={action} className="space-y-2 rounded-xl border bg-card p-3">
       {purchase ? <input type="hidden" name="id" value={purchase.id} /> : null}
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="space-y-1">
           <Label htmlFor={`purchasedOn-${formId}`}>Data da compra</Label>
           <Input id={`purchasedOn-${formId}`} name="purchasedOn" type="date" required value={purchasedOn} onChange={(event) => setPurchasedOn(event.target.value)} />
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           <Label htmlFor={`supplier-${formId}`}>Fornecedor</Label>
           <Input id={`supplier-${formId}`} name="supplier" required placeholder="Mercado, distribuidora..." value={supplier} onChange={(event) => setSupplier(event.target.value)} />
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           <Label htmlFor={`payment-${formId}`}>Forma de pagamento</Label>
           <Select id={`payment-${formId}`} name="payment" value={payment} onChange={(event) => setPayment(event.target.value)}>
             {methods.map((method) => (
@@ -128,15 +128,15 @@ export function PurchaseDesk({
             ))}
           </Select>
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           <Label htmlFor={`invoice-${formId}`}>Imagem da nota</Label>
           <Input id={`invoice-${formId}`} name="invoice" type="file" accept="image/jpeg,image/png,image/webp" />
           <p className="text-xs text-muted-foreground">Opcional. JPG, PNG ou WebP, até 5 MB.</p>
         </div>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-2">
         {lines.map((line, index) => (
-          <div key={line.key} className="space-y-2 rounded-xl border p-3">
+          <div key={line.key} className="space-y-2 rounded-lg border p-2">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium">Item {index + 1}</p>
               <Button
@@ -162,19 +162,19 @@ export function PurchaseDesk({
                   onChange={(productId) => update(line.key, { productId })}
                 />
               </div>
-              <div className="min-w-0 flex-[1_1_0%] space-y-1.5">
+              <div className="min-w-0 flex-[1_1_0%] space-y-1">
                 <Label className="block truncate whitespace-nowrap" htmlFor={`barcode-${line.key}`}>Código de barras</Label>
                 <Input id={`barcode-${line.key}`} className="min-w-0" inputMode="numeric" value={line.barcode} onChange={(event) => update(line.key, { barcode: event.target.value })} placeholder="Opcional" />
               </div>
-              <div className="min-w-0 flex-[0.5_1_0%] space-y-1.5">
+              <div className="min-w-0 flex-[0.5_1_0%] space-y-1">
                 <Label className="block truncate whitespace-nowrap" htmlFor={`qty-${line.key}`}>Quantidade</Label>
                 <Input id={`qty-${line.key}`} className="min-w-0" inputMode="numeric" value={line.quantity} onChange={(event) => update(line.key, { quantity: event.target.value })} />
               </div>
-              <div className="min-w-0 flex-[0.5_1_0%] space-y-1.5">
+              <div className="min-w-0 flex-[0.5_1_0%] space-y-1">
                 <Label className="block truncate whitespace-nowrap" htmlFor={`cost-${line.key}`}>Valor unitário</Label>
                 <Input id={`cost-${line.key}`} className="min-w-0" inputMode="decimal" value={line.cost} onChange={(event) => update(line.key, { cost: event.target.value })} placeholder="2,40" />
               </div>
-              <div className="min-w-0 flex-[0.8_1_0%] space-y-1.5">
+              <div className="min-w-0 flex-[0.8_1_0%] space-y-1">
                 <Label className="block truncate whitespace-nowrap" htmlFor={`expires-${line.key}`}>Data de validade</Label>
                 <Input id={`expires-${line.key}`} className="min-w-0" type="date" required value={line.expires} min={purchasedOn} onChange={(event) => update(line.key, { expires: event.target.value })} />
               </div>

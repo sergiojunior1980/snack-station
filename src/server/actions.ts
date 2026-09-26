@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { homeFor, normalizeMenus, sellerMenus, type MenuId } from "@/lib/roles";
+import { canUseMenu, homeFor, normalizeMenus, normalizeRole, sellerMenus, type MenuId } from "@/lib/roles";
 import { loginToEmail, normalizeUsername } from "@/lib/username";
 import { parseBRLToCents } from "@/lib/money";
 import { defaultAppearance, isHexColor } from "@/lib/brand";
@@ -73,21 +73,117 @@ const productSchema = z.object({
   minStock: z.coerce.number().int().min(0, "O estoque mínimo não pode ser negativo."),
 });
 
-async function readAttributes(supabase: Awaited<ReturnType<typeof db>>, slug: string, formData: FormData) {
-  const brand = String(formData.get("brand") ?? "").trim();
-  if (brand.length < 2) return { error: "Informe a marca." };
-
-  const { data: category } = await supabase.from("categories").select("id").eq("slug", slug).maybeSingle();
-  if (!category) return { error: "Escolha uma categoria." };
-
-  const attributes: Record<string, string> = { marca: brand };
+function productAttributes(slug: string, brand: string, volume: string) {
+  const cleanBrand = brand.trim();
+  if (cleanBrand.length < 2) return { error: "Informe a marca." };
+  const attributes: Record<string, string> = { marca: cleanBrand };
   if (slug === "refrigerante" || slug === "agua") {
-    const raw = String(formData.get("attr_volume_ml") ?? "").trim();
+    const raw = volume.trim();
     const amount = Number(raw.replace(",", "."));
     if (!raw || !Number.isFinite(amount) || amount <= 0) return { error: "Informe o tamanho da garrafa em ml." };
     attributes.volume_ml = String(amount);
   }
   return { attributes };
+}
+
+async function readAttributes(supabase: Awaited<ReturnType<typeof db>>, slug: string, formData: FormData) {
+  const details = productAttributes(slug, String(formData.get("brand") ?? ""), String(formData.get("attr_volume_ml") ?? ""));
+  if ("error" in details) return details;
+  const { data: category } = await supabase.from("categories").select("id").eq("slug", slug).maybeSingle();
+  if (!category) return { error: "Escolha uma categoria." };
+  return details;
+}
+
+type ProductDraft = {
+  name: string;
+  brand: string;
+  category: string;
+  volume: string;
+  price: string;
+  minStock: number;
+  combo: boolean;
+  parts: { product_id: string; quantity: number }[];
+};
+
+function draftItems(formData: FormData): ProductDraft[] | { error: string } {
+  const raw = String(formData.get("items") ?? "");
+  let rows: unknown[] = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return { error: "Não foi possível ler os produtos." };
+      rows = parsed;
+    } catch {
+      return { error: "Não foi possível ler os produtos." };
+    }
+  } else {
+    rows = [
+      {
+        name: formData.get("name"),
+        brand: formData.get("brand"),
+        category: formData.get("category"),
+        volume: formData.get("attr_volume_ml"),
+        price: formData.get("price"),
+        minStock: formData.get("minStock"),
+        combo: formData.get("combo") === "on",
+        parts: formData.get("parts"),
+      },
+    ];
+  }
+  if (rows.length === 0) return { error: "Adicione pelo menos um produto." };
+  if (rows.length > 20) return { error: "Cadastre no máximo 20 produtos de cada vez." };
+
+  const items: ProductDraft[] = [];
+  for (const [index, row] of rows.entries()) {
+    if (!row || typeof row !== "object") return { error: `Item ${index + 1} está incompleto.` };
+    const item = row as Record<string, unknown>;
+    const name = String(item.name ?? "").trim();
+    const brand = String(item.brand ?? "").trim();
+    const category = String(item.category ?? "").trim();
+    const price = String(item.price ?? "").trim();
+    const minStock = Number(item.minStock);
+    const combo = item.combo === true || item.combo === "on";
+    const label = name || `Item ${index + 1}`;
+    if (name.length < 2) return { error: `${label}: dê um nome ao produto.` };
+    if (brand.length < 2) return { error: `${label}: informe a marca.` };
+    if (!category) return { error: `${label}: escolha a categoria.` };
+    if (parseBRLToCents(price) == null) return { error: `${label}: informe o valor de venda. Use 3,50 por exemplo.` };
+    if (!combo && (!Number.isInteger(minStock) || minStock < 0)) {
+      return { error: `${label}: o estoque mínimo precisa ser um número inteiro a partir de zero.` };
+    }
+    let parts: { product_id: string; quantity: number }[] = [];
+    if (combo) {
+      let rawParts: unknown = item.parts;
+      if (typeof rawParts === "string") {
+        try {
+          rawParts = JSON.parse(rawParts);
+        } catch {
+          return { error: `${label}: monte o combo com produtos já cadastrados.` };
+        }
+      }
+      if (!Array.isArray(rawParts)) return { error: `${label}: monte o combo com produtos já cadastrados.` };
+      parts = rawParts
+        .map((part) => {
+          const line = part as { product_id?: string; quantity?: number };
+          return { product_id: String(line.product_id ?? ""), quantity: Number(line.quantity) };
+        })
+        .filter((part) => part.product_id && Number.isInteger(part.quantity) && part.quantity > 0);
+      if (new Set(parts.map((part) => part.product_id)).size < 2) {
+        return { error: `${label}: o combo precisa de dois ou mais produtos diferentes.` };
+      }
+    }
+    items.push({
+      name,
+      brand,
+      category,
+      volume: String(item.volume ?? ""),
+      price,
+      minStock: combo ? 0 : minStock,
+      combo,
+      parts,
+    });
+  }
+  return items;
 }
 
 function parseComboParts(formData: FormData): { lines: { product_id: string; quantity: number }[] } | { error: string } {
@@ -106,50 +202,53 @@ function parseComboParts(formData: FormData): { lines: { product_id: string; qua
 }
 
 export async function createProduct(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const parsed = productSchema.safeParse({
-    name: formData.get("name"),
-    category: formData.get("category"),
-    price: formData.get("price"),
-    minStock: formData.get("minStock"),
-  });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
-
-  const price = parseBRLToCents(parsed.data.price);
-  if (price == null) return { error: "Preço de venda inválido. Use 3,50 por exemplo." };
-  const combo = formData.get("combo") === "on";
-  const parts = parseComboParts(formData);
-  if (combo && "error" in parts) return { error: parts.error };
+  const drafts = draftItems(formData);
+  if ("error" in drafts) return { error: drafts.error };
 
   const supabase = await db();
-  const details = await readAttributes(supabase, parsed.data.category, formData);
-  if ("error" in details && details.error) return { error: details.error };
-  const comboCost = combo && "lines" in parts ? await comboCostCents(supabase, parts.lines) : 0;
-  const { data: created, error } = await supabase.from("products").insert({
-    name: parsed.data.name,
-    category: parsed.data.category,
-    attributes: details.attributes ?? {},
-    sale_price_cents: price,
-    cost_price_cents: comboCost,
-    avg_cost_cents: comboCost,
-    stock_quantity: 0,
-    min_stock: combo ? 0 : parsed.data.minStock,
-    is_combo: combo,
-    active: true,
-  }).select("id").single();
-  if (error || !created) return { error: error ? message(error) : "Não foi possível cadastrar." };
-  if (combo && "lines" in parts) {
-    const { error: partError } = await supabase.from("product_components").insert(
-      parts.lines.map((part) => ({ combo_id: created.id, product_id: part.product_id, quantity: part.quantity })),
-    );
-    if (partError) return { error: message(partError) };
+  const names: string[] = [];
+  for (const item of drafts) {
+    const price = parseBRLToCents(item.price);
+    if (price == null) return { error: `${item.name}: informe o valor de venda. Use 3,50 por exemplo.` };
+    const details = productAttributes(item.category, item.brand, item.volume);
+    if ("error" in details) return { error: names.length ? `${names.join(", ")} já ficou cadastrado. ${item.name}: ${details.error}` : `${item.name}: ${details.error}` };
+    const { data: category } = await supabase.from("categories").select("id").eq("slug", item.category).maybeSingle();
+    if (!category) {
+      return { error: names.length ? `${names.join(", ")} já ficou cadastrado. ${item.name}: escolha uma categoria.` : `${item.name}: escolha uma categoria.` };
+    }
+    const comboCost = item.combo ? await comboCostCents(supabase, item.parts) : 0;
+    const { data: created, error } = await supabase.from("products").insert({
+      name: item.name,
+      category: item.category,
+      attributes: details.attributes ?? {},
+      sale_price_cents: price,
+      cost_price_cents: comboCost,
+      avg_cost_cents: comboCost,
+      stock_quantity: 0,
+      min_stock: item.minStock,
+      is_combo: item.combo,
+      active: true,
+    }).select("id").single();
+    if (error || !created) {
+      const reason = error ? message(error) : "Não foi possível cadastrar.";
+      return { error: names.length ? `${names.join(", ")} já ficou cadastrado. ${item.name}: ${reason}` : `${item.name}: ${reason}` };
+    }
+    if (item.combo) {
+      const { error: partError } = await supabase.from("product_components").insert(
+        item.parts.map((part) => ({ combo_id: created.id, product_id: part.product_id, quantity: part.quantity })),
+      );
+      if (partError) return { error: names.length ? `${names.join(", ")} já ficou cadastrado. ${item.name}: ${message(partError)}` : message(partError) };
+    }
+    names.push(item.name);
   }
+
   await supabase.rpc("append_tape", {
     p_module: "cadastro_produtos",
-    p_summary: combo ? `Combo criado: ${parsed.data.name}` : `Produto criado: ${parsed.data.name}`,
+    p_summary: names.length === 1 ? `Produto criado: ${names[0]}` : `Produtos criados: ${names.join(", ")}`,
   });
   revalidatePath("/produtos");
   revalidatePath("/");
-  return { ok: "Produto cadastrado." };
+  return { ok: names.length === 1 ? "Produto cadastrado." : `${names.length} produtos cadastrados.` };
 }
 
 export async function updateProduct(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -246,8 +345,10 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
   const supabase = await db();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { error: "Entre para salvar a aparência." };
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", auth.user.id).maybeSingle();
-  if (profile?.role !== "admin") return { error: "Só o administrador muda a aparência." };
+  const { data: profile } = await supabase.from("profiles").select("role, menus").eq("id", auth.user.id).maybeSingle();
+  if (!canUseMenu(normalizeRole(profile?.role), normalizeMenus(profile?.menus), "configuracoes")) {
+    return { error: "Este perfil não altera a aparência." };
+  }
 
   const buttonColor = String(formData.get("buttonColor") ?? "");
   const backgroundColor = String(formData.get("backgroundColor") ?? "");

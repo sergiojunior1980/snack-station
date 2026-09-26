@@ -6,18 +6,16 @@ import { paymentLabel } from "@/lib/catalog";
 import { periodRange } from "@/lib/dates";
 import { formatDateTime } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
-import { AppearanceForm } from "@/components/appearance";
-import { appearance, listProducts, recentSales, revenueSeries } from "@/server/queries";
+import { listProducts, recentSales, revenueSeries } from "@/server/queries";
 
 export default async function HomePage() {
   const today = periodRange("hoje");
   const month = periodRange("mes");
-  const [products, sales, todaySeries, monthSeries, look] = await Promise.all([
+  const [products, sales, todaySeries, monthSeries] = await Promise.all([
     listProducts(),
     recentSales(6),
     revenueSeries(today.from, today.to, "day"),
     revenueSeries(month.from, month.to, "month"),
-    appearance(),
   ]);
 
   const todayTotal = todaySeries.reduce((sum, row) => sum + Number(row.total_cents), 0);
@@ -42,7 +40,6 @@ export default async function HomePage() {
           </>
         }
       />
-      <AppearanceForm appearance={look} />
       <section className="grid gap-3 sm:grid-cols-3">
         <Stat label="Hoje" value={formatBRL(todayTotal)} hint={`${todayCount} venda${todayCount === 1 ? "" : "s"}`} />
         <Stat label="Este mês" value={formatBRL(monthTotal)} hint="Faturamento acumulado" />
