@@ -446,6 +446,16 @@ export async function setSellerMenus(_prev: ActionState, formData: FormData): Pr
   return { ok: "Menus do vendedor atualizados." };
 }
 
+export async function deleteTeamMember(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) return { error: "Usuário não encontrado." };
+  const supabase = await db();
+  const { error } = await supabase.rpc("delete_team_member", { p_user_id: userId });
+  if (error) return { error: message(error) };
+  revalidatePath("/equipe");
+  return { ok: "Usuário excluído." };
+}
+
 export async function resetSellerPassword(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const userId = String(formData.get("userId") ?? "");
   const password = String(formData.get("password") ?? "");

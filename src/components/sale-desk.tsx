@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useActionState } from "react";
+import { useRouter } from "next/navigation";
 import { Minus, Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,19 @@ export function SaleDesk({
   ]);
   const [state, action, pending] = useActionState(registerSale, null as ActionState);
   const [handledState, setHandledState] = useState(state);
+  const router = useRouter();
+
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === "visible") router.refresh();
+    };
+    const id = window.setInterval(tick, 4000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [router]);
 
   if (state?.ok && state !== handledState) {
     setHandledState(state);
@@ -289,6 +303,7 @@ export type RecentSale = {
   id: string;
   total_cents: number;
   payment_method: string;
+  seller_name: string;
   created_at: string;
   sale_items: { product_name: string; quantity: number }[] | null;
   sale_payments: { payment_method: string; amount_cents: number }[] | null;
@@ -319,7 +334,9 @@ export function RecentSales({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-sm">{items.map((item) => `${item.quantity}× ${item.product_name}`).join(", ")}</p>
-                    <p className="text-xs text-muted-foreground">{formatDateTime(sale.created_at)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {sale.seller_name} · {formatDateTime(sale.created_at)}
+                    </p>
                     <p className="text-xs text-muted-foreground">{payments}</p>
                   </div>
                   <div className="flex items-center gap-2">

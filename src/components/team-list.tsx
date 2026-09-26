@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { defaultSellerMenus, roleLabel, sellerMenus, type MenuId, type Role } from "@/lib/roles";
-import { createTeamMember, resetSellerPassword, setSellerMenus, setUserRole, type ActionState } from "@/server/actions";
+import { createTeamMember, deleteTeamMember, resetSellerPassword, setSellerMenus, setUserRole, type ActionState } from "@/server/actions";
 
 export function TeamList({
   members,
@@ -35,7 +35,10 @@ export function TeamList({
                 <p className="text-xs text-muted-foreground">@{member.username}</p>
               ) : null}
             </div>
-            <RoleSwitch member={member} disabled={member.id === currentUserId && member.role === "admin"} />
+            <div className="flex flex-col items-end gap-2">
+              <RoleSwitch member={member} disabled={member.id === currentUserId && member.role === "admin"} />
+              {member.id === currentUserId ? null : <DeleteMember member={member} />}
+            </div>
           </div>
           {member.role === "vendedor" ? <PasswordReset member={member} /> : null}
           {member.role === "vendedor" ? <MenuAccess member={member} /> : null}
@@ -93,6 +96,38 @@ function CreateMember() {
       {state?.error ? <p className="text-sm text-destructive sm:col-span-2 lg:col-span-5">{state.error}</p> : null}
       {state?.ok ? <p className="text-sm text-emerald-700 sm:col-span-2 lg:col-span-5">{state.ok}</p> : null}
     </form>
+  );
+}
+
+function DeleteMember({ member }: { member: { id: string; full_name: string } }) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(deleteTeamMember, null as ActionState);
+
+  return (
+    <>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}>
+        Excluir
+      </Button>
+      {open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <form action={action} className="w-full max-w-md space-y-3 rounded-2xl bg-card p-5 shadow-lg">
+            <input type="hidden" name="userId" value={member.id} />
+            <p className="font-heading text-xl">Excluir {member.full_name}?</p>
+            <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+              <li>Essa pessoa deixa de entrar no sistema.</li>
+              <li>O usuário, a senha e os menus são apagados.</li>
+              <li>Vendas, compras e a fita que ela registrou continuam no histórico.</li>
+            </ul>
+            {state?.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+            {state?.ok ? <p className="text-sm text-emerald-700">{state.ok}</p> : null}
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={pending}>{pending ? "Excluindo…" : "Excluir usuário"}</Button>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </>
   );
 }
 

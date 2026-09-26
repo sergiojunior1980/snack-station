@@ -75,7 +75,7 @@ export default async function FinancePage({
     ...periodSales.map((sale) => ({
       id: `sale-${sale.id}`,
       kind: "Venda" as const,
-      detail: paymentLabel(sale.payment_method),
+      detail: `${paymentLabel(sale.payment_method)} · ${sale.seller_name}`,
       cents: sale.total_cents,
       created_at: sale.created_at,
     })),

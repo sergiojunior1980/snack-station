@@ -15,7 +15,7 @@ export default async function TeamPage() {
       <PageHero
         eyebrow="Equipe"
         title="Quem entra na estação"
-        description="Crie o vendedor, veja o usuário e a senha, redefina a senha e escolha os menus que ele pode abrir."
+        description="Crie o vendedor, veja o usuário e a senha, redefina a senha, escolha os menus e exclua quem não deve mais entrar."
       />
       <TeamList members={members} currentUserId={user.id} />
       <Tape title="Fita de perfis e usuários" entries={tape} />

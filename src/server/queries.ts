@@ -251,7 +251,7 @@ export async function recentSales(limit = 8) {
   if (!supabase) return [];
   const { data } = await supabase
     .from("sales")
-    .select("id, total_cents, payment_method, created_at, sale_items(product_name, quantity), sale_payments(payment_method, amount_cents)")
+    .select("id, total_cents, payment_method, seller_name, created_at, sale_items(product_name, quantity), sale_payments(payment_method, amount_cents)")
     .order("created_at", { ascending: false })
     .limit(limit);
   return data ?? [];
@@ -275,7 +275,7 @@ export async function financeEntries(from: Date, to: Date) {
   const [sales, purchases, movements, sessions] = await Promise.all([
     supabase
       .from("sales")
-      .select("id, total_cents, payment_method, created_at")
+      .select("id, total_cents, payment_method, seller_name, created_at")
       .gte("created_at", from.toISOString())
       .lt("created_at", to.toISOString())
       .order("created_at", { ascending: false })
@@ -304,7 +304,7 @@ export async function financeEntries(from: Date, to: Date) {
   ]);
 
   return {
-    sales: (sales.data ?? []) as { id: string; total_cents: number; payment_method: string; created_at: string }[],
+    sales: (sales.data ?? []) as { id: string; total_cents: number; payment_method: string; seller_name: string; created_at: string }[],
     purchases: (purchases.data ?? []) as { id: string; total_cents: number; supplier: string | null; created_at: string }[],
     movements: (movements.data ?? []) as { id: string; kind: "entrada" | "retirada"; amount_cents: number; note: string; created_at: string }[],
     sessions: (sessions.data ?? []) as {

@@ -17,7 +17,7 @@ export default async function SalesPage() {
       <PageHero
         eyebrow="Balcão"
         title="Registrar venda"
-        description="Toque nos produtos e divida o pagamento se precisar. A venda só entra com o caixa aberto."
+        description="Toque nos produtos e divida o pagamento se precisar. A venda fica no nome de quem está logado. Duas pessoas podem vender ao mesmo tempo, com o caixa aberto."
       />
       <SaleDesk products={products} categories={categories} cashOpen={cashOpen} methods={methods.filter((method) => method.active !== false)} />
       <section className="space-y-3">

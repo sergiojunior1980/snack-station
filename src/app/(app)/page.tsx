@@ -63,7 +63,9 @@ export default async function HomePage() {
                     <p className="mt-1 text-sm text-muted-foreground">
                       {items.map((item) => `${item.quantity}× ${item.product_name}`).join(", ")}
                     </p>
-                    <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(sale.created_at)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {sale.seller_name} · {formatDateTime(sale.created_at)}
+                    </p>
                   </li>
                 );
               })}
