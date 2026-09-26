@@ -190,7 +190,6 @@ function ProductForm({
   const [lines, setLines] = useState<ProductLine[]>([blankProduct("1")]);
   const [notice, setNotice] = useState("");
   const [seen, setSeen] = useState(state);
-  const nextKey = useRef(2);
   const simples = products.filter((item) => !item.is_combo);
   const items = lines.map((line) => ({
     name: line.name,
@@ -210,10 +209,7 @@ function ProductForm({
   if (state && state !== seen) {
     setSeen(state);
     if (state.error) setNotice(state.error);
-    if (state.ok) {
-      setLines([blankProduct("1")]);
-      nextKey.current = 2;
-    }
+    if (state.ok) setLines([blankProduct("1")]);
   }
 
   function patch(key: string, next: Partial<ProductLine>) {
@@ -337,11 +333,12 @@ function ProductForm({
       <Button
         type="button"
         variant="secondary"
-        onClick={() => {
-          const key = String(nextKey.current);
-          nextKey.current += 1;
-          setLines((current) => [...current, blankProduct(key)]);
-        }}
+        onClick={() =>
+          setLines((current) => {
+            const next = current.reduce((max, line) => Math.max(max, Number(line.key) || 0), 0) + 1;
+            return [...current, blankProduct(String(next))];
+          })
+        }
       >
         Adicionar item
       </Button>
