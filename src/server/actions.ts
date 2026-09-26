@@ -73,21 +73,20 @@ const productSchema = z.object({
   minStock: z.coerce.number().int().min(0, "O estoque mínimo não pode ser negativo."),
 });
 
-function productAttributes(slug: string, brand: string, volume: string) {
+function productAttributes(brand: string, size: string, unit: string) {
   const cleanBrand = brand.trim();
   if (cleanBrand.length < 2) return { error: "Informe a marca." };
-  const attributes: Record<string, string> = { marca: cleanBrand };
-  if (slug === "refrigerante" || slug === "agua") {
-    const raw = volume.trim();
-    const amount = Number(raw.replace(",", "."));
-    if (!raw || !Number.isFinite(amount) || amount <= 0) return { error: "Informe o tamanho da garrafa em ml." };
-    attributes.volume_ml = String(amount);
-  }
+  const raw = size.trim();
+  const amount = Number(raw.replace(",", "."));
+  if (!raw || !Number.isFinite(amount) || amount <= 0) return { error: "Informe o tamanho." };
+  if (unit !== "ml" && unit !== "g") return { error: "Escolha ml ou gramas." };
+  const attributes: Record<string, string> = { marca: cleanBrand, size: String(amount), size_unit: unit };
+  if (unit === "ml") attributes.volume_ml = String(amount);
   return { attributes };
 }
 
 async function readAttributes(supabase: Awaited<ReturnType<typeof db>>, slug: string, formData: FormData) {
-  const details = productAttributes(slug, String(formData.get("brand") ?? ""), String(formData.get("attr_volume_ml") ?? ""));
+  const details = productAttributes(String(formData.get("brand") ?? ""), String(formData.get("size") ?? ""), String(formData.get("size_unit") ?? ""));
   if ("error" in details) return details;
   const { data: category } = await supabase.from("categories").select("id").eq("slug", slug).maybeSingle();
   if (!category) return { error: "Escolha uma categoria." };
@@ -98,7 +97,8 @@ type ProductDraft = {
   name: string;
   brand: string;
   category: string;
-  volume: string;
+  size: string;
+  unit: string;
   price: string;
   minStock: number;
   combo: boolean;
@@ -122,7 +122,8 @@ function draftItems(formData: FormData): ProductDraft[] | { error: string } {
         name: formData.get("name"),
         brand: formData.get("brand"),
         category: formData.get("category"),
-        volume: formData.get("attr_volume_ml"),
+        size: formData.get("size"),
+        unit: formData.get("size_unit"),
         price: formData.get("price"),
         minStock: formData.get("minStock"),
         combo: formData.get("combo") === "on",
@@ -147,6 +148,11 @@ function draftItems(formData: FormData): ProductDraft[] | { error: string } {
     if (name.length < 2) return { error: `${label}: dê um nome ao produto.` };
     if (brand.length < 2) return { error: `${label}: informe a marca.` };
     if (!category) return { error: `${label}: escolha a categoria.` };
+    const size = String(item.size ?? "").trim();
+    const unit = String(item.unit ?? "");
+    const amount = Number(size.replace(",", "."));
+    if (!size || !Number.isFinite(amount) || amount <= 0) return { error: `${label}: informe o tamanho.` };
+    if (unit !== "ml" && unit !== "g") return { error: `${label}: escolha ml ou gramas.` };
     if (parseBRLToCents(price) == null) return { error: `${label}: informe o valor de venda. Use 3,50 por exemplo.` };
     if (!combo && (!Number.isInteger(minStock) || minStock < 0)) {
       return { error: `${label}: o estoque mínimo precisa ser um número inteiro a partir de zero.` };
@@ -176,7 +182,8 @@ function draftItems(formData: FormData): ProductDraft[] | { error: string } {
       name,
       brand,
       category,
-      volume: String(item.volume ?? ""),
+      size,
+      unit,
       price,
       minStock: combo ? 0 : minStock,
       combo,
@@ -210,7 +217,7 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   for (const item of drafts) {
     const price = parseBRLToCents(item.price);
     if (price == null) return { error: `${item.name}: informe o valor de venda. Use 3,50 por exemplo.` };
-    const details = productAttributes(item.category, item.brand, item.volume);
+    const details = productAttributes(item.brand, item.size, item.unit);
     if ("error" in details) return { error: names.length ? `${names.join(", ")} já ficou cadastrado. ${item.name}: ${details.error}` : `${item.name}: ${details.error}` };
     const { data: category } = await supabase.from("categories").select("id").eq("slug", item.category).maybeSingle();
     if (!category) {
@@ -738,35 +745,15 @@ export async function saveCategory(_prev: ActionState, formData: FormData): Prom
   const name = String(formData.get("name") ?? "").trim();
   if (name.length < 2) return { error: "Informe o nome da categoria." };
   const supabase = await db();
-  const liquid = formData.get("liquid") === "on";
   if (id) {
     const { error } = await supabase.from("categories").update({ name }).eq("id", id);
     if (error) return { error: message(error) };
-    if (liquid) {
-      await supabase.from("category_fields").upsert(
-        { category_id: id, key: "volume_ml", label: "Tamanho", field_type: "number", unit: "ml", required: true, sort_order: 1 },
-        { onConflict: "category_id,key" },
-      );
-    } else {
-      await supabase.from("category_fields").delete().eq("category_id", id).eq("key", "volume_ml");
-    }
     await supabase.rpc("append_tape", { p_module: "compras_estoque", p_summary: `Categoria editada: ${name}` });
   } else {
     const slug = slugify(name);
     if (!slug) return { error: "Use um nome com letras." };
     const { data, error } = await supabase.from("categories").insert({ name, slug }).select("id").single();
     if (error || !data) return { error: error ? message(error) : "Não foi possível criar a categoria." };
-    if (liquid) {
-      await supabase.from("category_fields").insert({
-        category_id: data.id,
-        key: "volume_ml",
-        label: "Tamanho",
-        field_type: "number",
-        unit: "ml",
-        required: true,
-        sort_order: 1,
-      });
-    }
     await supabase.rpc("append_tape", { p_module: "compras_estoque", p_summary: `Categoria criada: ${name}` });
   }
   revalidatePath("/produtos");

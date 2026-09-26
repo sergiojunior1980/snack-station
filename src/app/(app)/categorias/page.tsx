@@ -12,7 +12,7 @@ export default async function CategoriesPage() {
       <PageHero
         eyebrow="Catálogo"
         title="Categorias"
-        description="Crie e edite as categorias dos produtos. Marque líquido quando o cadastro precisar do tamanho em ml."
+        description="Crie e edite as categorias dos produtos. O tamanho em ml ou gramas fica no cadastro de cada produto."
       />
       <ModuleNav items={[{ href: "/produtos", label: "Cadastro" }, { href: "/categorias", label: "Categorias" }]} />
       <CategoryManager categories={categories} />

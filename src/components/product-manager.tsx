@@ -153,7 +153,8 @@ type ProductLine = {
   name: string;
   brand: string;
   category: string;
-  volume: string;
+  size: string;
+  unit: "ml" | "g";
   price: string;
   minStock: string;
   combo: boolean;
@@ -166,7 +167,8 @@ function blankProduct(key: string): ProductLine {
     name: "",
     brand: "",
     category: "",
-    volume: "",
+    size: "",
+    unit: "ml",
     price: "",
     minStock: "5",
     combo: false,
@@ -195,7 +197,8 @@ function ProductForm({
     name: line.name,
     brand: line.brand,
     category: line.category,
-    volume: line.volume,
+    size: line.size,
+    unit: line.unit,
     price: line.price,
     minStock: Number(line.minStock),
     combo: line.combo,
@@ -222,15 +225,14 @@ function ProductForm({
       className="space-y-2 rounded-xl border bg-card p-3"
       onSubmit={(event) => {
         for (const line of lines) {
-          const liquid = categories.find((item) => item.slug === line.category)?.fields.some((field) => field.key === "volume_ml") ?? false;
           const message = productIssues({
             name: line.name,
             brand: line.brand,
             category: line.category,
             price: line.price,
             minStock: line.minStock,
-            volume: line.volume,
-            liquid,
+            size: line.size,
+            unit: line.unit,
             combo: line.combo,
             parts: line.parts.map((part) => ({ product_id: part.productId, quantity: Number(part.quantity) })),
           });
@@ -250,7 +252,6 @@ function ProductForm({
         </p>
       </div>
       {lines.map((line, index) => {
-        const liquid = categories.find((item) => item.slug === line.category)?.fields.some((field) => field.key === "volume_ml") ?? false;
         return (
           <div key={line.key} className="space-y-2 rounded-lg border p-2">
             <div className="flex items-center justify-between gap-2">
@@ -265,7 +266,7 @@ function ProductForm({
                 Excluir
               </Button>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               <Field label="Nome" name={`name-${line.key}`} placeholder="Coca-Cola" value={line.name} onChange={(event) => patch(line.key, { name: event.target.value })} />
               <Field label="Marca" name={`brand-${line.key}`} placeholder="Coca-Cola" value={line.brand} onChange={(event) => patch(line.key, { brand: event.target.value })} />
               <Combobox
@@ -276,18 +277,23 @@ function ProductForm({
                 onChange={(category) => patch(line.key, { category })}
                 options={categories.map((item) => ({ value: item.slug, label: item.name }))}
               />
-              {liquid ? (
-                <Field
-                  label="Tamanho (ml)"
-                  name={`volume-${line.key}`}
-                  type="number"
-                  min={1}
-                  step="1"
-                  placeholder="350"
-                  value={line.volume}
-                  onChange={(event) => patch(line.key, { volume: event.target.value })}
-                />
-              ) : null}
+              <Field
+                label="Tamanho"
+                name={`size-${line.key}`}
+                type="number"
+                min={0.01}
+                step="any"
+                placeholder="350"
+                value={line.size}
+                onChange={(event) => patch(line.key, { size: event.target.value })}
+              />
+              <div className="space-y-1">
+                <Label htmlFor={`unit-${line.key}`}>Unidade</Label>
+                <Select id={`unit-${line.key}`} value={line.unit} onChange={(event) => patch(line.key, { unit: event.target.value === "g" ? "g" : "ml" })}>
+                  <option value="ml">ml</option>
+                  <option value="g">gramas</option>
+                </Select>
+              </div>
               <Field label="Valor de venda" name={`price-${line.key}`} placeholder="5,00" value={line.price} onChange={(event) => patch(line.key, { price: event.target.value })} />
               {line.combo ? null : (
                 <Field
@@ -297,6 +303,7 @@ function ProductForm({
                   type="number"
                   min={0}
                   value={line.minStock}
+                  className="sm:col-span-2 xl:col-span-2"
                   onChange={(event) => patch(line.key, { minStock: event.target.value })}
                 />
               )}
@@ -368,8 +375,8 @@ function EditProduct({
   const [clientNotice, setClientNotice] = useState("");
   const [dismissed, setDismissed] = useState<ActionState>(null);
   const saved = useRef<ActionState>(null);
-  const liquid = categories.find((item) => item.slug === category)?.fields.some((field) => field.key === "volume_ml") ?? false;
   const notice = clientNotice || (state?.error && state !== dismissed ? state.error : "");
+  const currentSize = productSize(product.attributes);
 
   useEffect(() => {
     if (!state?.ok || saved.current === state) return;
@@ -389,8 +396,8 @@ function EditProduct({
           category,
           price: String(data.get("price") ?? ""),
           minStock: String(data.get("minStock") ?? ""),
-          volume: String(data.get("attr_volume_ml") ?? ""),
-          liquid,
+          size: String(data.get("size") ?? ""),
+          unit: String(data.get("size_unit") ?? ""),
           combo,
           form: event.currentTarget,
         });
@@ -418,9 +425,14 @@ function EditProduct({
         onChange={setCategory}
         options={categories.map((item) => ({ value: item.slug, label: item.name }))}
       />
-      {liquid ? (
-        <Field label="Tamanho (ml)" name="attr_volume_ml" type="number" min={1} step="1" required defaultValue={product.attributes?.volume_ml ?? ""} />
-      ) : null}
+      <Field label="Tamanho" name="size" type="number" min={0.01} step="any" required defaultValue={currentSize.size} />
+      <div className="space-y-1">
+        <Label htmlFor={`unit-${product.id}`}>Unidade</Label>
+        <Select id={`unit-${product.id}`} name="size_unit" defaultValue={currentSize.unit}>
+          <option value="ml">ml</option>
+          <option value="g">gramas</option>
+        </Select>
+      </div>
       {combo ? null : <ReadOnlyCost cents={product.display_cost_cents ?? 0} />}
       <Field label="Valor de venda" name="price" defaultValue={(product.sale_price_cents / 100).toFixed(2).replace(".", ",")} />
       <Field label="Estoque mínimo" name="minStock" type="number" min={0} defaultValue={String(product.min_stock)} />
@@ -559,9 +571,21 @@ function DeleteProduct({ id }: { id: string }) {
   );
 }
 
+function productSize(attributes: Record<string, string>) {
+  if (attributes.size) return { size: attributes.size, unit: attributes.size_unit === "g" ? "g" as const : "ml" as const };
+  if (attributes.volume_ml) return { size: attributes.volume_ml, unit: "ml" as const };
+  return { size: "", unit: "ml" as const };
+}
+
+function formatProductSize(attributes: Record<string, string>) {
+  const { size, unit } = productSize(attributes);
+  if (!size) return null;
+  return `${size.replace(".", ",")} ${unit === "g" ? "g" : "ml"}`;
+}
+
 function AttributeLine({ attributes }: { category?: Category; attributes: Record<string, string> }) {
   if (!attributes) return null;
-  const parts = [attributes.marca, attributes.volume_ml ? `${attributes.volume_ml} ml` : null].filter(Boolean);
+  const parts = [attributes.marca, formatProductSize(attributes)].filter(Boolean);
   if (parts.length === 0) return null;
   return <p className="mt-1 text-xs text-muted-foreground">{parts.join(" · ")}</p>;
 }
@@ -604,8 +628,8 @@ function productIssues(input: {
   category: string;
   price: string;
   minStock: string;
-  volume: string;
-  liquid: boolean;
+  size: string;
+  unit: string;
   combo: boolean;
   form?: HTMLFormElement;
   parts?: { product_id: string; quantity: number }[];
@@ -618,10 +642,9 @@ function productIssues(input: {
     const min = Number(input.minStock);
     if (!Number.isInteger(min) || min < 0) return "O estoque mínimo precisa ser um número inteiro a partir de zero.";
   }
-  if (input.liquid) {
-    const amount = Number(input.volume.replace(",", "."));
-    if (!input.volume.trim() || !Number.isFinite(amount) || amount <= 0) return "Informe o tamanho em ml.";
-  }
+  const amount = Number(input.size.replace(",", "."));
+  if (!input.size.trim() || !Number.isFinite(amount) || amount <= 0) return "Informe o tamanho.";
+  if (input.unit !== "ml" && input.unit !== "g") return "Escolha ml ou gramas.";
   if (input.combo) {
     let parts = input.parts ?? [];
     if (!input.parts) {
@@ -721,10 +744,10 @@ function PriceFilter({
   );
 }
 
-function Field({ label, ...props }: React.ComponentProps<"input"> & { label: string }) {
+function Field({ label, className, ...props }: React.ComponentProps<"input"> & { label: string }) {
   return (
-    <div className="space-y-1">
-      <Label htmlFor={props.name}>{label}</Label>
+    <div className={cn("space-y-1", className)}>
+      <Label className="whitespace-nowrap" htmlFor={props.name}>{label}</Label>
       <Input id={props.name} {...props} />
     </div>
   );

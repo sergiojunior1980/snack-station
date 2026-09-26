@@ -24,11 +24,10 @@ export function CategoryManager({
   );
 }
 
-function CategoryForm({ category }: { category?: { id: string; name: string; fields: { key: string }[] } }) {
+function CategoryForm({ category }: { category?: { id: string; name: string } }) {
   const [state, action, pending] = useActionState(saveCategory, null as ActionState);
   const [removed, removeAction, removing] = useActionState(deleteCategory, null as ActionState);
   const [name, setName] = useState(category?.name ?? "");
-  const liquid = category?.fields.some((field) => field.key === "volume_ml") ?? false;
   const notice = state ?? removed;
 
   return (
@@ -39,10 +38,6 @@ function CategoryForm({ category }: { category?: { id: string; name: string; fie
           <Label htmlFor={category?.id ?? "new-category"}>{category ? "Nome" : "Nova categoria"}</Label>
           <Input id={category?.id ?? "new-category"} name="name" value={name} onChange={(event) => setName(event.target.value)} required />
         </div>
-        <label className="flex items-center gap-3 text-sm">
-          <input type="checkbox" name="liquid" defaultChecked={liquid} className="mr-3 size-4 shrink-0 accent-primary" />
-          Pedir tamanho em ml
-        </label>
         <div className="flex flex-wrap items-center gap-2">
           <Button disabled={pending}>{pending ? "Salvando…" : category ? "Salvar" : "Criar"}</Button>
           {category ? (
