@@ -687,6 +687,25 @@ export async function closeCashSession(_prev: ActionState, formData: FormData): 
   return slip ? { ok: "Caixa fechado.", slip } : { ok: "Caixa fechado." };
 }
 
+export async function correctCashSession(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const opening = parseBRLToCents(String(formData.get("opening") ?? ""));
+  const countedField = formData.get("counted");
+  const hasCounted = countedField != null && String(countedField) !== "";
+  const counted = hasCounted ? parseBRLToCents(String(countedField)) : null;
+  if (opening == null) return { error: "Informe o fundo de troco correto." };
+  if (hasCounted && counted == null) return { error: "Informe o valor contado correto." };
+  const supabase = await db();
+  const { error } = await supabase.rpc("correct_cash_session", {
+    p_session_id: String(formData.get("sessionId") ?? ""),
+    p_opening_cents: opening,
+    p_counted_cents: counted,
+    p_note: String(formData.get("note") ?? ""),
+  });
+  if (error) return { error: message(error) };
+  revalidateCash();
+  return { ok: "Caixa corrigido. O valor esperado foi recalculado." };
+}
+
 export async function registerCashMovement(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const kind = String(formData.get("kind") ?? "");
   const amount = parseBRLToCents(String(formData.get("amount") ?? ""));

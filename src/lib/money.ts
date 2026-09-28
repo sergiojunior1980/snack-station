@@ -1,3 +1,7 @@
+export function centsToInput(cents: number) {
+  return (cents / 100).toFixed(2).replace(".", ",");
+}
+
 export function formatBRL(cents: number) {
   return (cents / 100).toLocaleString("pt-BR", {
     style: "currency",

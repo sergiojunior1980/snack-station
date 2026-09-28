@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { printCashSlip, type CashSlip } from "@/lib/cash-slip";
 import { formatDateTime } from "@/lib/dates";
-import { formatBRL } from "@/lib/money";
-import { closeCashSession, openCashSession, registerCashMovement, type ActionState } from "@/server/actions";
+import { centsToInput, formatBRL } from "@/lib/money";
+import { closeCashSession, correctCashSession, openCashSession, registerCashMovement, type ActionState } from "@/server/actions";
 import type { CashSession } from "@/server/queries";
 
 export function CashDesk({
@@ -29,7 +29,10 @@ export function CashDesk({
       <div className="space-y-4 rounded-2xl border bg-card p-5">
         <h2 className="font-heading text-2xl">{open ? "Caixa aberto" : "Abrir caixa"}</h2>
         {open ? (
-          <CloseForm open={open} expectedCents={expectedCents} action={closeAction} pending={closing} error={closeState?.error} />
+          <>
+            <CloseForm open={open} expectedCents={expectedCents} action={closeAction} pending={closing} error={closeState?.error} />
+            <CorrectOpening sessionId={open.id} openingCents={open.opening_cents} />
+          </>
         ) : (
           <OpenForm />
         )}
@@ -40,20 +43,23 @@ export function CashDesk({
           <h2 className="font-heading text-2xl">Fechamentos</h2>
           <ul className="divide-y overflow-hidden rounded-2xl border bg-card">
             {recent.map((session) => (
-              <li key={session.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <div>
-                  <p className="font-medium">
-                    Contado {formatBRL(session.counted_cents ?? 0)} · esperado {formatBRL(session.expected_cents ?? 0)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {session.closed_at ? formatDateTime(session.closed_at) : ""}
-                    {session.closing_note ? ` · ${session.closing_note}` : ""}
+              <li key={session.id} className="space-y-3 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">
+                      Contado {formatBRL(session.counted_cents ?? 0)} · esperado {formatBRL(session.expected_cents ?? 0)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {session.closed_at ? formatDateTime(session.closed_at) : ""}
+                      {session.closing_note ? ` · ${session.closing_note}` : ""}
+                    </p>
+                  </div>
+                  <p className={`text-sm font-medium ${(session.difference_cents ?? 0) < 0 ? "text-destructive" : "text-primary"}`}>
+                    {(session.difference_cents ?? 0) > 0 ? "+" : ""}
+                    {formatBRL(session.difference_cents ?? 0)}
                   </p>
                 </div>
-                <p className={`text-sm font-medium ${(session.difference_cents ?? 0) < 0 ? "text-destructive" : "text-primary"}`}>
-                  {(session.difference_cents ?? 0) > 0 ? "+" : ""}
-                  {formatBRL(session.difference_cents ?? 0)}
-                </p>
+                <CorrectClosed session={session} />
               </li>
             ))}
           </ul>
@@ -139,6 +145,74 @@ function CloseForm({
       </div>
       {error ? <p className="text-sm text-destructive sm:col-span-2">{error}</p> : null}
       <Button className="sm:col-span-2" disabled={pending}>{pending ? "Fechando…" : "Fechar caixa"}</Button>
+    </form>
+  );
+}
+
+function CorrectOpening({ sessionId, openingCents }: { sessionId: string; openingCents: number }) {
+  const [state, action, pending] = useActionState(correctCashSession, null as ActionState);
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <Button type="button" variant="outline" className="sm:col-span-2" onClick={() => setOpen(true)}>
+        Corrigir fundo de troco
+      </Button>
+    );
+  }
+  return (
+    <form action={action} className="grid gap-3 rounded-xl bg-muted p-3 sm:col-span-2 sm:grid-cols-2">
+      <input type="hidden" name="sessionId" value={sessionId} />
+      <p className="text-sm text-muted-foreground sm:col-span-2">O valor esperado usa esse fundo. Corrigir aqui acerta o caixa sem abrir outro turno.</p>
+      <div className="space-y-1.5">
+        <Label htmlFor={`opening-${sessionId}`}>Fundo de troco</Label>
+        <Input id={`opening-${sessionId}`} name="opening" required defaultValue={centsToInput(openingCents)} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`opening-note-${sessionId}`}>Observação</Label>
+        <Input id={`opening-note-${sessionId}`} name="note" placeholder="Valor digitado errado" />
+      </div>
+      {state?.error ? <p className="text-sm text-destructive sm:col-span-2">{state.error}</p> : null}
+      {state?.ok ? <p className="text-sm text-emerald-700 sm:col-span-2">{state.ok}</p> : null}
+      <div className="flex flex-wrap gap-2 sm:col-span-2">
+        <Button disabled={pending}>{pending ? "Corrigindo…" : "Salvar correção"}</Button>
+        <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+      </div>
+    </form>
+  );
+}
+
+function CorrectClosed({ session }: { session: CashSession }) {
+  const [state, action, pending] = useActionState(correctCashSession, null as ActionState);
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+        Corrigir valores
+      </Button>
+    );
+  }
+  return (
+    <form action={action} className="grid gap-3 rounded-xl bg-muted p-3 sm:grid-cols-2">
+      <input type="hidden" name="sessionId" value={session.id} />
+      <p className="text-sm text-muted-foreground sm:col-span-2">Ajuste o fundo de troco ou o valor contado. A diferença é recalculada.</p>
+      <div className="space-y-1.5">
+        <Label htmlFor={`closed-opening-${session.id}`}>Fundo de troco</Label>
+        <Input id={`closed-opening-${session.id}`} name="opening" required defaultValue={centsToInput(session.opening_cents)} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`closed-counted-${session.id}`}>Valor contado</Label>
+        <Input id={`closed-counted-${session.id}`} name="counted" required defaultValue={centsToInput(session.counted_cents ?? 0)} />
+      </div>
+      <div className="space-y-1.5 sm:col-span-2">
+        <Label htmlFor={`closed-note-${session.id}`}>Observação</Label>
+        <Input id={`closed-note-${session.id}`} name="note" placeholder="Conferência do valor" />
+      </div>
+      {state?.error ? <p className="text-sm text-destructive sm:col-span-2">{state.error}</p> : null}
+      {state?.ok ? <p className="text-sm text-emerald-700 sm:col-span-2">{state.ok}</p> : null}
+      <div className="flex flex-wrap gap-2 sm:col-span-2">
+        <Button size="sm" disabled={pending}>{pending ? "Corrigindo…" : "Salvar correção"}</Button>
+        <Button type="button" size="sm" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+      </div>
     </form>
   );
 }
