@@ -1,5 +1,6 @@
 import { ModuleNav } from "@/components/module-nav";
 import { EmptyState, PageHero } from "@/components/page-hero";
+import { reportLinks } from "@/lib/report-nav";
 import { listProducts } from "@/server/queries";
 
 export default async function StockReportPage() {
@@ -14,7 +15,7 @@ export default async function StockReportPage() {
         title="Quantidade de cada item"
         description="Do produto com menos unidades para o que tem mais."
       />
-      <ModuleNav items={[{ href: "/relatorios/estoque", label: "Estoque" }, { href: "/relatorios/financeiro", label: "Financeiro" }]} />
+      <ModuleNav items={reportLinks} />
       {products.length === 0 ? (
         <EmptyState title="Nenhum produto" description="O estoque aparece aqui depois do cadastro." />
       ) : (

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BarChart3, LayoutDashboard, LogOut, Package, Settings, ShoppingBag, Users, Wallet, Warehouse } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
+import { financeReports } from "@/lib/report-nav";
 import { canUseMenu, roleLabel, type MenuId, type Role } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { clearSessionMark } from "@/lib/browser-session";
@@ -59,7 +60,11 @@ const nav: NavItem[] = [
     menu: "relatorios",
     children: [
       { href: "/relatorios/estoque", label: "Estoque" },
-      { href: "/relatorios/financeiro", label: "Financeiro" },
+      {
+        href: "/relatorios/financeiro/lucro",
+        label: "Financeiro",
+        children: financeReports.map((item) => ({ href: item.href, label: item.label })),
+      },
     ],
   },
   { href: "/configuracoes", label: "Configurações", icon: Settings, menu: "configuracoes", children: [] },
@@ -92,7 +97,7 @@ function Submenu({ items, pathname, hash, depth }: { items: NavChild[]; pathname
         const onFinance = child.hash !== undefined;
         const selected = onFinance
           ? pathname === "/financeiro" && (tab ? hash === `#${tab}` : hash !== "#formas")
-          : pathname === child.href;
+          : pathname === child.href || (child.children ?? []).some((item) => childActive(pathname, item));
         const nested = child.children ?? [];
         return (
           <div key={child.label}>

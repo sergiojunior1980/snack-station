@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 
-export function ReportRange({ inicio, fim, visao, base = "/relatorios/financeiro" }: { inicio: string; fim: string; visao: string; base?: string }) {
+export function ReportRange({ inicio, fim, visao, base = "/relatorios/financeiro/lucro" }: { inicio: string; fim: string; visao: string; base?: string }) {
   const router = useRouter();
 
   return (

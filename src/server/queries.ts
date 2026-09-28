@@ -490,17 +490,15 @@ export async function productMargins(from: Date, to: Date) {
   return products
     .map((product) => {
       const line = sold.get(product.id);
-      const quantity = line?.quantity ?? 0;
-      const cost = product.display_cost_cents ?? 0;
-      const revenue = line?.revenue ?? 0;
-      const sale = quantity > 0 ? Math.round(revenue / quantity) : product.sale_price_cents;
+      const cost = product.display_cost_cents ?? product.cost_price_cents ?? 0;
+      const sale = product.sale_price_cents;
       return {
         id: product.id,
         name: product.name,
-        quantity,
+        quantity: line?.quantity ?? 0,
         cost,
         sale,
-        profit: quantity > 0 ? revenue - cost * quantity : 0,
+        profit: sale - cost,
       };
     })
     .sort((a, b) => b.profit - a.profit || a.name.localeCompare(b.name, "pt"));
