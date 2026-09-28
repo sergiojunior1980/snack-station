@@ -2,6 +2,7 @@ import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { defaultAppearance, isHexColor, type Appearance } from "@/lib/brand";
 import { canUseMenu, defaultSellerMenus, normalizeMenus, normalizeRole, type Role } from "@/lib/roles";
+import type { CashSlip } from "@/lib/cash-slip";
 import type { ReportGrain } from "@/lib/dates";
 
 export type Product = {
@@ -363,6 +364,66 @@ export async function cashDesk() {
     expectedCents,
     recent: (recent ?? []) as CashSession[],
   };
+}
+
+export async function cashClosingSlip(sessionId: string) {
+  const { supabase, name } = await requireUser();
+  if (!supabase) return null;
+  const { data: session } = await supabase
+    .from("cash_sessions")
+    .select("id, opened_at, opening_cents, opening_note, closed_at, counted_cents, expected_cents, difference_cents, closing_note")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (!session?.closed_at || session.counted_cents == null || session.expected_cents == null || session.difference_cents == null) return null;
+
+  const [{ data: methods }, { data: sales }, { data: movements }] = await Promise.all([
+    supabase.from("payment_methods").select("id, kind, counts_as_cash"),
+    supabase
+      .from("sales")
+      .select("sale_payments(payment_method, amount_cents)")
+      .gte("created_at", session.opened_at)
+      .lt("created_at", session.closed_at),
+    supabase
+      .from("cash_movements")
+      .select("kind, amount_cents")
+      .gte("created_at", session.opened_at)
+      .lt("created_at", session.closed_at),
+  ]);
+  const cashMethods = new Set(
+    ((methods ?? []) as { id: string; kind: string; counts_as_cash: boolean }[])
+      .filter((method) => method.kind === "recebimento" && method.counts_as_cash)
+      .map((method) => method.id),
+  );
+  const salesCents = ((sales ?? []) as { sale_payments: { payment_method: string; amount_cents: number }[] | null }[]).reduce(
+    (sum, sale) => sum + (sale.sale_payments ?? []).reduce((inner, payment) => inner + (cashMethods.has(payment.payment_method) ? payment.amount_cents : 0), 0),
+    0,
+  );
+  const moved = ((movements ?? []) as { kind: "entrada" | "retirada"; amount_cents: number }[]).reduce(
+    (sum, movement) => {
+      if (movement.kind === "entrada") sum.inCents += movement.amount_cents;
+      else sum.outCents += movement.amount_cents;
+      return sum;
+    },
+    { inCents: 0, outCents: 0 },
+  );
+  const purchaseCents = session.opening_cents + salesCents + moved.inCents - moved.outCents - session.expected_cents;
+
+  return {
+    id: session.id as string,
+    openedAt: session.opened_at as string,
+    closedAt: session.closed_at as string,
+    operator: name || "Responsável",
+    openingCents: session.opening_cents as number,
+    openingNote: (session.opening_note as string | null) ?? null,
+    salesCents,
+    inCents: moved.inCents,
+    outCents: moved.outCents,
+    purchaseCents: Math.max(0, purchaseCents),
+    expectedCents: session.expected_cents as number,
+    countedCents: session.counted_cents as number,
+    differenceCents: session.difference_cents as number,
+    closingNote: (session.closing_note as string | null) ?? null,
+  } satisfies CashSlip;
 }
 
 export type CashSession = {

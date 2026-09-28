@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
+import { printCashSlip, type CashSlip } from "@/lib/cash-slip";
 import { formatDateTime } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
 import { closeCashSession, openCashSession, registerCashMovement, type ActionState } from "@/server/actions";
@@ -17,12 +18,18 @@ export function CashDesk({
   expectedCents: number;
   recent: CashSession[];
 }) {
+  const [closeState, closeAction, closing] = useActionState(closeCashSession, null as ActionState);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const slip = closeState?.slip;
+  const askPrint = Boolean(slip && dismissed !== slip.id);
+
   return (
+    <>
     <section className="grid gap-4 lg:grid-cols-2">
       <div className="space-y-4 rounded-2xl border bg-card p-5">
         <h2 className="font-heading text-2xl">{open ? "Caixa aberto" : "Abrir caixa"}</h2>
         {open ? (
-          <CloseForm open={open} expectedCents={expectedCents} />
+          <CloseForm open={open} expectedCents={expectedCents} action={closeAction} pending={closing} error={closeState?.error} />
         ) : (
           <OpenForm />
         )}
@@ -53,6 +60,33 @@ export function CashDesk({
         </div>
       ) : null}
     </section>
+    {askPrint && slip ? <PrintAsk slip={slip} onDone={() => setDismissed(slip.id)} /> : null}
+    </>
+  );
+}
+
+function PrintAsk({ slip, onDone }: { slip: CashSlip; onDone: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md space-y-3 rounded-2xl bg-card p-5 shadow-lg">
+        <p className="font-heading text-xl">Imprimir o fechamento?</p>
+        <p className="text-sm text-muted-foreground">O comprovante traz os valores do turno e um espaço para assinatura.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            onClick={() => {
+              printCashSlip(slip);
+              onDone();
+            }}
+          >
+            Imprimir
+          </Button>
+          <Button type="button" variant="outline" onClick={onDone}>
+            Agora não
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -76,8 +110,19 @@ function OpenForm() {
   );
 }
 
-function CloseForm({ open, expectedCents }: { open: CashSession; expectedCents: number }) {
-  const [state, action, pending] = useActionState(closeCashSession, null as ActionState);
+function CloseForm({
+  open,
+  expectedCents,
+  action,
+  pending,
+  error,
+}: {
+  open: CashSession;
+  expectedCents: number;
+  action: (payload: FormData) => void;
+  pending: boolean;
+  error?: string;
+}) {
   return (
     <form action={action} className="grid gap-3 sm:grid-cols-2">
       <p className="text-sm text-muted-foreground sm:col-span-2">
@@ -92,8 +137,7 @@ function CloseForm({ open, expectedCents }: { open: CashSession; expectedCents: 
         <Label htmlFor="closing-note">Observação</Label>
         <Input id="closing-note" name="note" placeholder="Diferença conferida" />
       </div>
-      {state?.error ? <p className="text-sm text-destructive sm:col-span-2">{state.error}</p> : null}
-      {state?.ok ? <p className="text-sm text-emerald-700 sm:col-span-2">{state.ok}</p> : null}
+      {error ? <p className="text-sm text-destructive sm:col-span-2">{error}</p> : null}
       <Button className="sm:col-span-2" disabled={pending}>{pending ? "Fechando…" : "Fechar caixa"}</Button>
     </form>
   );

@@ -9,9 +9,10 @@ import { parseBRLToCents } from "@/lib/money";
 import { defaultAppearance, isHexColor } from "@/lib/brand";
 import { supabaseEnv } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
-import { costMode, stockUnitCost } from "@/server/queries";
+import type { CashSlip } from "@/lib/cash-slip";
+import { cashClosingSlip, costMode, stockUnitCost } from "@/server/queries";
 
-export type ActionState = { error?: string; ok?: string } | null;
+export type ActionState = { error?: string; ok?: string; slip?: CashSlip } | null;
 
 async function db() {
   const supabase = await createClient();
@@ -676,13 +677,14 @@ export async function closeCashSession(_prev: ActionState, formData: FormData): 
   const amount = parseBRLToCents(String(formData.get("amount") ?? ""));
   if (amount == null) return { error: "Informe o valor contado no caixa." };
   const supabase = await db();
-  const { error } = await supabase.rpc("close_cash_session", {
+  const { data, error } = await supabase.rpc("close_cash_session", {
     p_counted_cents: amount,
     p_note: String(formData.get("note") ?? ""),
   });
   if (error) return { error: message(error) };
+  const slip = await cashClosingSlip(String(data ?? ""));
   revalidateCash();
-  return { ok: "Caixa fechado." };
+  return slip ? { ok: "Caixa fechado.", slip } : { ok: "Caixa fechado." };
 }
 
 export async function registerCashMovement(_prev: ActionState, formData: FormData): Promise<ActionState> {
