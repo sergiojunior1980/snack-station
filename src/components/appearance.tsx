@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useContext } from "react";
+import { createContext, useContext, useRef, useState } from "react";
 import { useActionState } from "react";
 import { defaultAppearance, type Appearance } from "@/lib/brand";
+import { logoFileError } from "@/lib/logo-file";
 import { saveAppearance, type ActionState } from "@/server/actions";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -19,9 +20,19 @@ export function useAppearance() {
 
 export function AppearanceForm({ appearance }: { appearance: Appearance }) {
   const [state, action, pending] = useActionState(saveAppearance, null as ActionState);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const logoCheck = useRef(0);
 
   return (
-    <form action={action} className="space-y-3 rounded-2xl border bg-card p-4">
+    <form
+      action={action}
+      className="space-y-3 rounded-2xl border bg-card p-4"
+      onSubmit={(event) => {
+        const input = event.currentTarget.elements.namedItem("logo");
+        const file = input instanceof HTMLInputElement ? input.files?.[0] : undefined;
+        if (file && file.size > 0 && fileError) event.preventDefault();
+      }}
+    >
       <div>
         <h2 className="font-heading text-xl">Aparência</h2>
         <p className="text-sm text-muted-foreground">A cor dos botões, o fundo e a logo do canto superior esquerdo valem para todo o sistema.</p>
@@ -42,8 +53,27 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
           ) : (
             <p className="text-sm text-muted-foreground">Hoje aparece a palavra FISK.</p>
           )}
-          <Input id="logo" name="logo" type="file" accept="image/png,image/jpeg,image/webp" />
-          <p className="text-xs text-muted-foreground">PNG, JPG ou WebP, até 2 MB. Deixe em branco para manter a logo atual.</p>
+          <Input
+            id="logo"
+            name="logo"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+            onChange={(event) => {
+              const input = event.currentTarget;
+              const file = input.files?.[0];
+              const check = ++logoCheck.current;
+              if (!file) {
+                setFileError(null);
+                return;
+              }
+              void logoFileError(file).then((error) => {
+                if (check !== logoCheck.current) return;
+                if (error) input.value = "";
+                setFileError(error);
+              });
+            }}
+          />
+          <p className="text-xs text-muted-foreground">PNG, JPG ou WebP, até 100 KB. Deixe em branco para manter a logo atual.</p>
         </div>
       </div>
       {appearance.logoUrl ? (
@@ -52,6 +82,7 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
           Voltar para a palavra FISK
         </label>
       ) : null}
+      {fileError && !state?.ok ? <p className="text-sm text-destructive">{fileError}</p> : null}
       {state?.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
       {state?.ok ? <p className="text-sm text-emerald-700">{state.ok}</p> : null}
       <Button disabled={pending}>{pending ? "Salvando…" : "Salvar aparência"}</Button>

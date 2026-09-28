@@ -7,6 +7,7 @@ import { canUseMenu, homeFor, normalizeMenus, normalizeRole, sellerMenus, type M
 import { loginToEmail, normalizeUsername } from "@/lib/username";
 import { parseBRLToCents } from "@/lib/money";
 import { defaultAppearance, isHexColor } from "@/lib/brand";
+import { LOGO_MAX_BYTES, LOGO_SIZE_ERROR, LOGO_TYPE_ERROR, logoKind } from "@/lib/logo-file";
 import { supabaseEnv } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import type { CashSlip } from "@/lib/cash-slip";
@@ -372,11 +373,12 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
 
   const file = formData.get("logo");
   if (file instanceof File && file.size > 0) {
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) return { error: "A logo precisa ser PNG, JPG ou WebP." };
-    if (file.size > 2_097_152) return { error: "A logo passa de 2 MB." };
-    const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+    if (file.size > LOGO_MAX_BYTES) return { error: LOGO_SIZE_ERROR };
+    const kind = logoKind(new Uint8Array(await file.slice(0, 16).arrayBuffer()));
+    if (!kind) return { error: LOGO_TYPE_ERROR };
+    const ext = kind === "image/png" ? "png" : kind === "image/webp" ? "webp" : "jpg";
     const path = `logo.${ext}`;
-    const { error: uploadError } = await supabase.storage.from("marca").upload(path, file, { contentType: file.type, upsert: true });
+    const { error: uploadError } = await supabase.storage.from("marca").upload(path, file, { contentType: kind, upsert: true });
     if (uploadError) return { error: message(uploadError) };
     const env = supabaseEnv();
     logoUrl = env ? `${env.url}/storage/v1/object/public/marca/${path}?v=${Date.now()}` : "";
