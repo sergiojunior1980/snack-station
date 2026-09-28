@@ -338,9 +338,9 @@ export async function financeEntries(from: Date, to: Date) {
 }
 
 export async function cashDesk() {
-  const { supabase, role, menus } = await requireUser();
+  const { supabase } = await requireUser();
   const empty = { open: null as null, expectedCents: 0, recent: [] as CashSession[] };
-  if (!supabase || !canUseMenu(role, menus, "financeiro")) return empty;
+  if (!supabase) return empty;
   const { data: open, error } = await supabase
     .from("cash_sessions")
     .select("id, opened_at, opening_cents, opening_note, closed_at, counted_cents, expected_cents, difference_cents, closing_note")
@@ -465,6 +465,45 @@ export async function topProducts(from: Date, to: Date) {
     quantity: number;
     total_cents: number;
   }[];
+}
+
+export async function productMargins(from: Date, to: Date) {
+  const { supabase, role, menus } = await requireUser();
+  if (!supabase || !canUseMenu(role, menus, "relatorios")) return [];
+  const [products, sales] = await Promise.all([
+    listProducts(),
+    supabase.from("sales").select("id").gte("created_at", from.toISOString()).lt("created_at", to.toISOString()),
+  ]);
+  const saleIds = (sales.data ?? []).map((row) => row.id);
+  const items = saleIds.length
+    ? (
+        await supabase.from("sale_items").select("product_id, product_name, quantity, total_cents").in("sale_id", saleIds)
+      ).data ?? []
+    : [];
+  const sold = new Map<string, { quantity: number; revenue: number }>();
+  for (const item of items) {
+    const current = sold.get(item.product_id) ?? { quantity: 0, revenue: 0 };
+    current.quantity += Number(item.quantity);
+    current.revenue += Number(item.total_cents);
+    sold.set(item.product_id, current);
+  }
+  return products
+    .map((product) => {
+      const line = sold.get(product.id);
+      const quantity = line?.quantity ?? 0;
+      const cost = product.display_cost_cents ?? 0;
+      const revenue = line?.revenue ?? 0;
+      const sale = quantity > 0 ? Math.round(revenue / quantity) : product.sale_price_cents;
+      return {
+        id: product.id,
+        name: product.name,
+        quantity,
+        cost,
+        sale,
+        profit: quantity > 0 ? revenue - cost * quantity : 0,
+      };
+    })
+    .sort((a, b) => b.profit - a.profit || a.name.localeCompare(b.name, "pt"));
 }
 
 export async function unsoldProducts(from: Date, to: Date) {

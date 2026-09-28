@@ -35,6 +35,7 @@ export function canUseMenu(role: Role, menus: MenuId[], menu: MenuId) {
 
 export function canVisit(role: Role, menus: MenuId[], pathname: string) {
   if (role === "admin") return true;
+  if (pathname === "/financeiro" || pathname.startsWith("/financeiro/")) return true;
   return sellerMenus.some(
     (menu) => menus.includes(menu.id) && menu.prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)),
   );

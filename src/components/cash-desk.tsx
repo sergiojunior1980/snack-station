@@ -103,14 +103,14 @@ function MovementForm() {
   const [state, action, pending] = useActionState(registerCashMovement, null as ActionState);
   return (
     <form action={action} className="space-y-3 rounded-2xl border bg-card p-5">
-      <h2 className="font-heading text-2xl">Entrada e retirada</h2>
+      <h2 className="font-heading text-lg">Entrada e saída</h2>
       <p className="text-sm text-muted-foreground">Pode ser lançada com o caixa aberto ou fechado. A observação é obrigatória.</p>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="kind">Tipo</Label>
           <Select id="kind" name="kind" defaultValue="entrada">
             <option value="entrada">Entrada</option>
-            <option value="retirada">Retirada</option>
+            <option value="retirada">Saída</option>
           </Select>
         </div>
         <div className="space-y-1.5">

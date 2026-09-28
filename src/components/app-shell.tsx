@@ -49,10 +49,19 @@ const nav: NavItem[] = [
     menu: "financeiro",
     children: [
       { href: "/financeiro", label: "Caixa", hash: "" },
-      { href: "/financeiro", label: "Formas de pagamento", hash: "formas" },
+      { href: "/financeiro", label: "Formas de pagamento", hash: "formas", admin: true },
     ],
   },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3, menu: "relatorios", children: [] },
+  {
+    href: "/relatorios",
+    label: "Relatórios",
+    icon: BarChart3,
+    menu: "relatorios",
+    children: [
+      { href: "/relatorios/estoque", label: "Estoque" },
+      { href: "/relatorios/financeiro", label: "Financeiro" },
+    ],
+  },
   { href: "/configuracoes", label: "Configurações", icon: Settings, menu: "configuracoes", children: [] },
   { href: "/equipe", label: "Equipe", icon: Users, children: [] },
 ];
@@ -129,7 +138,10 @@ export function AppShell({
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
   }, [pathname]);
-  const items = nav.filter((item) => (item.menu ? canUseMenu(role, menus, item.menu) : role === "admin"));
+  const items = nav.filter((item) => {
+    if (item.href === "/financeiro") return true;
+    return item.menu ? canUseMenu(role, menus, item.menu) : role === "admin";
+  });
 
   return (
     <BrowserSession>

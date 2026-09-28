@@ -8,7 +8,7 @@ import { addDays, bucketKey, eachBucket, formatBucket, formatDateTime, formatDay
 import { paymentLabel } from "@/lib/catalog";
 import { formatBRL } from "@/lib/money";
 import { Tape } from "@/components/tape";
-import { accountBalance, cashDesk, financeEntries, listPaymentMethods, listTape } from "@/server/queries";
+import { accountBalance, cashDesk, financeEntries, listPaymentMethods, listTape, requireUser } from "@/server/queries";
 
 const periods: { id: ReportPeriod; label: string }[] = [
   { id: "hoje", label: "Hoje" },
@@ -28,6 +28,21 @@ export default async function FinancePage({
 }: {
   searchParams: Promise<{ periodo?: string; visao?: string }>;
 }) {
+  const { role } = await requireUser();
+  if (role !== "admin") {
+    const desk = await cashDesk();
+    return (
+      <div className="space-y-3">
+        <PageHero
+          eyebrow="Financeiro"
+          title="Caixa do turno"
+          description="Abra e feche o caixa e lance a entrada ou a saída de dinheiro."
+        />
+        <CashDesk open={desk.open} expectedCents={desk.expectedCents} recent={desk.recent} />
+      </div>
+    );
+  }
+
   const params = await searchParams;
   const period = periods.some((item) => item.id === params.periodo) ? (params.periodo as ReportPeriod) : "mes";
   const grain = grains.some((item) => item.id === params.visao) ? (params.visao as ReportGrain) : "day";

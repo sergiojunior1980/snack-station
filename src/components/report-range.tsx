@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 
-export function ReportRange({ inicio, fim, visao }: { inicio: string; fim: string; visao: string }) {
+export function ReportRange({ inicio, fim, visao, base = "/relatorios/financeiro" }: { inicio: string; fim: string; visao: string; base?: string }) {
   const router = useRouter();
 
   return (
@@ -18,7 +18,7 @@ export function ReportRange({ inicio, fim, visao }: { inicio: string; fim: strin
           fim: String(data.get("fim") ?? ""),
           visao,
         });
-        router.push(`/relatorios?${query.toString()}`);
+        router.push(`${base}?${query.toString()}`);
       }}
     >
       <div className="space-y-1">
