@@ -1,4 +1,4 @@
-export type Role = "admin" | "vendedor";
+export type Role = "admin" | "vendedor" | "plataforma";
 
 export const sellerMenus = [
   { id: "vender", label: "Vender", prefixes: ["/vendas"] },
@@ -7,6 +7,7 @@ export const sellerMenus = [
   { id: "financeiro", label: "Financeiro", prefixes: ["/financeiro"] },
   { id: "relatorios", label: "Relatórios", prefixes: ["/relatorios"] },
   { id: "configuracoes", label: "Configurações", prefixes: ["/configuracoes"] },
+  { id: "auditoria", label: "Auditoria", prefixes: ["/auditoria"] },
 ] as const;
 
 export type MenuId = (typeof sellerMenus)[number]["id"];
@@ -16,10 +17,12 @@ export const defaultSellerMenus: MenuId[] = ["vender", "produtos"];
 const menuIds = new Set<string>(sellerMenus.map((menu) => menu.id));
 
 export function normalizeRole(role: string | null | undefined): Role {
+  if (role === "plataforma") return "plataforma";
   return role === "admin" ? "admin" : "vendedor";
 }
 
 export function roleLabel(role: Role) {
+  if (role === "plataforma") return "Plataforma";
   return role === "admin" ? "Administrador" : "Vendedor";
 }
 
@@ -34,6 +37,8 @@ export function canUseMenu(role: Role, menus: MenuId[], menu: MenuId) {
 }
 
 export function canVisit(role: Role, menus: MenuId[], pathname: string) {
+  if (role === "plataforma") return pathname === "/lojas";
+  if (pathname === "/lojas") return false;
   if (role === "admin") return true;
   if (pathname === "/financeiro" || pathname.startsWith("/financeiro/")) return true;
   return sellerMenus.some(
@@ -42,6 +47,7 @@ export function canVisit(role: Role, menus: MenuId[], pathname: string) {
 }
 
 export function homeFor(role: Role, menus: MenuId[] = defaultSellerMenus) {
+  if (role === "plataforma") return "/lojas";
   if (role === "admin") return "/";
   const allowed = sellerMenus.find((menu) => menus.includes(menu.id));
   return allowed?.prefixes[0] ?? "/vendas";

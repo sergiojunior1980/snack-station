@@ -7,8 +7,7 @@ import { PaymentMethodManager } from "@/components/payment-method-manager";
 import { addDays, bucketKey, eachBucket, formatBucket, formatDateTime, formatDay, periodRange, seriesRange, type ReportGrain, type ReportPeriod } from "@/lib/dates";
 import { paymentLabel } from "@/lib/catalog";
 import { formatBRL } from "@/lib/money";
-import { Tape } from "@/components/tape";
-import { accountBalance, cashDesk, financeEntries, listPaymentMethods, listTape, requireUser } from "@/server/queries";
+import { accountBalance, cashDesk, financeEntries, listPaymentMethods, requireUser } from "@/server/queries";
 
 const periods: { id: ReportPeriod; label: string }[] = [
   { id: "hoje", label: "Hoje" },
@@ -50,11 +49,10 @@ export default async function FinancePage({
   const seriesWindow = seriesRange(grain);
   const from = new Date(Math.min(selected.from.getTime(), seriesWindow.from.getTime()));
   const to = new Date(Math.max(selected.to.getTime(), seriesWindow.to.getTime()));
-  const [{ sales, purchases, movements: cashMoves, sessions }, desk, balance, tape, receipts, payments] = await Promise.all([
+  const [{ sales, purchases, movements: cashMoves, sessions }, desk, balance, receipts, payments] = await Promise.all([
     financeEntries(from, to),
     cashDesk(),
     accountBalance(),
-    listTape("caixa_vendas"),
     listPaymentMethods("recebimento"),
     listPaymentMethods("pagamento"),
   ]);
@@ -200,7 +198,6 @@ export default async function FinancePage({
           </ul>
         )}
       </section>
-            <Tape title="Fita de caixa e vendas" entries={tape} />
           </>
         }
         formas={

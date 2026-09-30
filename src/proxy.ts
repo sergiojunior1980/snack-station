@@ -4,7 +4,7 @@ import { canVisit, homeFor, normalizeMenus, normalizeRole } from "@/lib/roles";
 import { supabaseEnv } from "@/lib/supabase/env";
 import { browserSessionOptions } from "@/lib/supabase/session-cookie";
 
-const publicPaths = new Set(["/login", "/api/health"]);
+const publicPaths = new Set(["/login", "/recuperar", "/api/health"]);
 
 export async function proxy(request: NextRequest) {
   const env = supabaseEnv();
@@ -36,8 +36,9 @@ export async function proxy(request: NextRequest) {
   }
 
   const isPublic = publicPaths.has(pathname);
+  const recoveryReset = pathname === "/recuperar/nova-senha";
 
-  if (!data.user && !isPublic) {
+  if (!data.user && !isPublic && !recoveryReset) {
     const redirectUrl = new URL("/login", request.url);
     redirectUrl.search = request.nextUrl.search;
     const redirect = NextResponse.redirect(redirectUrl);
@@ -45,15 +46,27 @@ export async function proxy(request: NextRequest) {
     return dropPersistentSession(redirect, request);
   }
 
-  if (data.user && isPublic) {
-    const { data: profile } = await supabase.from("profiles").select("role, menus").eq("id", data.user.id).maybeSingle();
+  if (data.user && isPublic && !recoveryReset) {
+    const { data: profile } = await supabase.from("profiles").select("role, menus, tenants(status)").eq("id", data.user.id).maybeSingle();
+    if (shopStatus(profile?.tenants) === "suspended") {
+      await supabase.auth.signOut();
+      const redirect = NextResponse.redirect(new URL("/login?aviso=suspensa", request.url));
+      response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+      return dropPersistentSession(redirect, request);
+    }
     const redirect = NextResponse.redirect(new URL(homeFor(normalizeRole(profile?.role), normalizeMenus(profile?.menus)), request.url));
     response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
     return dropPersistentSession(redirect, request);
   }
 
-  if (data.user) {
-    const { data: profile } = await supabase.from("profiles").select("role, menus").eq("id", data.user.id).maybeSingle();
+  if (data.user && !recoveryReset) {
+    const { data: profile } = await supabase.from("profiles").select("role, menus, tenants(status)").eq("id", data.user.id).maybeSingle();
+    if (shopStatus(profile?.tenants) === "suspended") {
+      await supabase.auth.signOut();
+      const redirect = NextResponse.redirect(new URL("/login?aviso=suspensa", request.url));
+      response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+      return dropPersistentSession(redirect, request);
+    }
     const role = normalizeRole(profile?.role);
     const menus = normalizeMenus(profile?.menus);
     if (!canVisit(role, menus, pathname)) {
@@ -64,6 +77,12 @@ export async function proxy(request: NextRequest) {
   }
 
   return dropPersistentSession(response, request);
+}
+
+function shopStatus(value: unknown) {
+  const row = Array.isArray(value) ? value[0] : value;
+  if (row && typeof row === "object" && "status" in row && typeof row.status === "string") return row.status;
+  return null;
 }
 
 function dropPersistentSession(response: NextResponse, request: NextRequest) {

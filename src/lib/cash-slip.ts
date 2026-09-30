@@ -1,3 +1,4 @@
+import type { SlipRevenueLine } from "@/lib/cash-revenue";
 import { formatDateTime } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
 
@@ -8,6 +9,8 @@ export type CashSlip = {
   operator: string;
   openingCents: number;
   openingNote: string | null;
+  revenue: SlipRevenueLine[];
+  billedCents: number;
   salesCents: number;
   inCents: number;
   outCents: number;
@@ -49,6 +52,7 @@ export function cashSlipDocument(slip: CashSlip) {
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     td { padding: 3px 0; vertical-align: top; }
     td:last-child { text-align: right; white-space: nowrap; font-weight: 600; }
+    td.section { padding-top: 10px; text-align: left; font-weight: 700; }
     .line { border-top: 1px dashed #111; }
     .sign { margin-top: 36px; }
     .sign .space { height: 42px; border-bottom: 1px solid #111; }
@@ -62,6 +66,10 @@ export function cashSlipDocument(slip: CashSlip) {
   <p>Fechado em ${formatDateTime(slip.closedAt)}</p>
   <p>Responsável: ${text(slip.operator)}</p>
   <table>
+    <tr><td class="section" colspan="2">Faturamento do turno</td></tr>
+    ${slip.revenue.map((line) => row(text(line.name), formatBRL(line.cents))).join("")}
+    <tr class="line"><td>Total faturado</td><td>${formatBRL(slip.billedCents)}</td></tr>
+    <tr><td class="section" colspan="2">Caixa</td></tr>
     ${row("Fundo de troco", formatBRL(slip.openingCents))}
     ${row("Vendas em dinheiro", formatBRL(slip.salesCents))}
     ${row("Entradas", formatBRL(slip.inCents))}

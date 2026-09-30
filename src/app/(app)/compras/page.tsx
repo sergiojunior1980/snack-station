@@ -1,14 +1,12 @@
 import { ModuleNav } from "@/components/module-nav";
 import { PageHero } from "@/components/page-hero";
 import { PurchaseScreen, type SavedPurchase } from "@/components/purchase-desk";
-import { Tape } from "@/components/tape";
-import { listPaymentMethods, listProducts, listTape, recentPurchases } from "@/server/queries";
+import { listPaymentMethods, listProducts, recentPurchases } from "@/server/queries";
 
 export default async function PurchasesPage() {
-  const [products, purchases, tape, methods] = await Promise.all([
+  const [products, purchases, methods] = await Promise.all([
     listProducts(),
     recentPurchases(),
-    listTape("compras_estoque"),
     listPaymentMethods("pagamento"),
   ]);
 
@@ -31,7 +29,6 @@ export default async function PurchasesPage() {
           methods={methods.filter((method) => method.active !== false)}
         />
       )}
-      <Tape title="Fita de compras e estoque" entries={tape} />
     </div>
   );
 }

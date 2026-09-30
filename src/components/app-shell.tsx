@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart3, LayoutDashboard, LogOut, Package, Settings, ShoppingBag, Users, Wallet, Warehouse } from "lucide-react";
+import { BarChart3, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Package, Settings, ShoppingBag, Store, Users, Wallet, Warehouse } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { financeReports } from "@/lib/report-nav";
 import { canUseMenu, roleLabel, type MenuId, type Role } from "@/lib/roles";
@@ -68,6 +68,7 @@ const nav: NavItem[] = [
     ],
   },
   { href: "/configuracoes", label: "Configurações", icon: Settings, menu: "configuracoes", children: [] },
+  { href: "/auditoria", label: "Auditoria", icon: ClipboardList, menu: "auditoria", children: [] },
   { href: "/equipe", label: "Equipe", icon: Users, children: [] },
 ];
 
@@ -88,36 +89,81 @@ function visibleChildren(children: NavChild[], role: Role): NavChild[] {
     .map((child) => ({ ...child, children: child.children ? visibleChildren(child.children, role) : undefined }));
 }
 
-function Submenu({ items, pathname, hash, depth }: { items: NavChild[]; pathname: string; hash: string; depth: number }) {
+function menuKey(parent: string, label: string) {
+  return parent ? `${parent}/${label}` : label;
+}
+
+function branchKeys(parent: string, children: NavChild[], pathname: string, keys: string[]) {
+  for (const child of children) {
+    const key = menuKey(parent, child.label);
+    const nested = child.children ?? [];
+    if (nested.length > 0 && childActive(pathname, child)) {
+      keys.push(key);
+      branchKeys(key, nested, pathname, keys);
+    }
+  }
+}
+
+function Submenu({
+  items,
+  pathname,
+  hash,
+  depth,
+  parentKey,
+  isOpen,
+  onToggle,
+}: {
+  items: NavChild[];
+  pathname: string;
+  hash: string;
+  depth: number;
+  parentKey: string;
+  isOpen: (key: string) => boolean;
+  onToggle: (key: string, href: string) => void;
+}) {
   return (
     <div className={cn("mt-1 flex flex-col gap-1", depth === 0 ? "ml-7" : "ml-4")}>
       {items.map((child) => {
+        const key = menuKey(parentKey, child.label);
+        const nested = child.children ?? [];
         const tab = child.hash;
         const href = tab ? `${child.href}#${tab}` : child.href;
         const onFinance = child.hash !== undefined;
         const selected = onFinance
           ? pathname === "/financeiro" && (tab ? hash === `#${tab}` : hash !== "#formas")
-          : pathname === child.href || (child.children ?? []).some((item) => childActive(pathname, item));
-        const nested = child.children ?? [];
+          : pathname === child.href || nested.some((item) => childActive(pathname, item));
+        const className = cn(
+          "flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs",
+          selected ? "bg-secondary font-medium text-foreground" : "text-muted-foreground",
+        );
+        if (nested.length > 0) {
+          const open = isOpen(key);
+          return (
+            <div key={child.label}>
+              <button type="button" aria-expanded={open} className={className} onClick={() => onToggle(key, child.href)}>
+                {child.label}
+                <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
+              </button>
+              {open ? (
+                <Submenu items={nested} pathname={pathname} hash={hash} depth={depth + 1} parentKey={key} isOpen={isOpen} onToggle={onToggle} />
+              ) : null}
+            </div>
+          );
+        }
         return (
-          <div key={child.label}>
-            <Link
-              href={href}
-              onClick={(event) => {
-                if (pathname !== "/financeiro" || !onFinance) return;
-                event.preventDefault();
-                window.history.replaceState(null, "", href);
-                window.dispatchEvent(new HashChangeEvent("hashchange"));
-              }}
-              className={cn(
-                "block rounded-lg px-2 py-1.5 text-xs",
-                selected ? "bg-secondary font-medium text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {child.label}
-            </Link>
-            {nested.length > 0 ? <Submenu items={nested} pathname={pathname} hash={hash} depth={depth + 1} /> : null}
-          </div>
+          <Link
+            key={child.label}
+            href={href}
+            onClick={(event) => {
+              if (pathname !== "/financeiro" || !onFinance) return;
+              event.preventDefault();
+              window.history.replaceState(null, "", href);
+              window.dispatchEvent(new HashChangeEvent("hashchange"));
+            }}
+            className={className}
+          >
+            {child.label}
+          </Link>
         );
       })}
     </div>
@@ -129,24 +175,48 @@ export function AppShell({
   userName,
   role,
   menus,
+  shopName = "",
 }: {
   children: React.ReactNode;
   userName: string;
   role: Role;
   menus: MenuId[];
+  shopName?: string;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [hash, setHash] = useState("");
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [trackedPath, setTrackedPath] = useState(pathname);
+  if (trackedPath !== pathname) {
+    setTrackedPath(pathname);
+    setOpen({});
+  }
   useEffect(() => {
     const read = () => setHash(window.location.hash);
     read();
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
   }, [pathname]);
-  const items = nav.filter((item) => {
-    if (item.href === "/financeiro") return true;
-    return item.menu ? canUseMenu(role, menus, item.menu) : role === "admin";
+  const items = role === "plataforma"
+    ? [{ href: "/lojas", label: "Lojas", icon: Store, children: [] as NavChild[] }]
+    : nav.filter((item) => {
+        if (item.href === "/financeiro") return true;
+        return item.menu ? canUseMenu(role, menus, item.menu) : role === "admin";
+      });
+  const activeKeys = items.flatMap((item) => {
+    if (!groupActive(pathname, item)) return [];
+    const keys = item.children.length > 0 ? [item.label] : [];
+    branchKeys(item.label, visibleChildren(item.children, role), pathname, keys);
+    return keys;
   });
+  const isOpen = (key: string) => (key in open ? open[key] : activeKeys.includes(key));
+  const onToggle = (key: string, href: string) => {
+    const opening = !isOpen(key);
+    setOpen((current) => ({ ...current, [key]: opening }));
+    const path = href.split("#")[0] ?? href;
+    if (opening && path && pathname !== path) router.push(path);
+  };
 
   return (
     <BrowserSession>
@@ -159,26 +229,35 @@ export function AppShell({
             const active = groupActive(pathname, item);
             const children = visibleChildren(item.children, role);
             const showChildren = children.length > 1 || children.some((child) => (child.children ?? []).length > 0);
+            const expanded = showChildren && isOpen(item.label);
+            const itemClass = cn(
+              "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition-colors",
+              active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+            );
             return (
               <div key={item.label}>
-                <Link
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors",
-                    active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                  )}
-                >
-                  <Icon className="size-4" />
-                  {item.label}
-                </Link>
-                {active && showChildren ? <Submenu items={children} pathname={pathname} hash={hash} depth={0} /> : null}
+                {showChildren ? (
+                  <button type="button" aria-expanded={expanded} className={itemClass} onClick={() => onToggle(item.label, item.href)}>
+                    <Icon className="size-4" />
+                    <span className="flex-1">{item.label}</span>
+                    <ChevronDown className={cn("size-4 transition-transform", expanded && "rotate-180")} />
+                  </button>
+                ) : (
+                  <Link href={item.href} className={itemClass}>
+                    <Icon className="size-4" />
+                    {item.label}
+                  </Link>
+                )}
+                {expanded ? (
+                  <Submenu items={children} pathname={pathname} hash={hash} depth={0} parentKey={item.label} isOpen={isOpen} onToggle={onToggle} />
+                ) : null}
               </div>
             );
           })}
         </nav>
         <div className="mt-auto rounded-2xl bg-secondary/80 p-3">
           <p className="truncate text-sm font-medium">{userName}</p>
-          <p className="text-xs text-muted-foreground">{roleLabel(role)}</p>
+          <p className="text-xs text-muted-foreground">{shopName ? `${shopName} · ` : ""}{roleLabel(role)}</p>
           <form action={logout} onSubmit={() => clearSessionMark()}>
             <button type="submit" className="mt-2 flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
               <LogOut className="size-3.5" /> Sair

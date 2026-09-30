@@ -2,10 +2,9 @@ import { EmptyState, PageHero } from "@/components/page-hero";
 import { ModuleNav } from "@/components/module-nav";
 import { StockDesk } from "@/components/stock-desk";
 import { StockNotice } from "@/components/stock-notice";
-import { Tape } from "@/components/tape";
 import { formatDateTime } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
-import { stockBoard, listTape } from "@/server/queries";
+import { stockBoard } from "@/server/queries";
 
 const reasons: Record<string, string> = {
   vencimento: "Vencimento",
@@ -17,7 +16,7 @@ const reasons: Record<string, string> = {
 };
 
 export default async function StockPage() {
-  const [{ products, lots, movements, ready }, tape] = await Promise.all([stockBoard(), listTape("compras_estoque")]);
+  const { products, lots, movements, ready } = await stockBoard();
   const names = new Map(products.map((product) => [product.id, product.name]));
 
   return (
@@ -96,7 +95,6 @@ export default async function StockPage() {
           </section>
         </>
       )}
-      <Tape title="Fita de compras e estoque" entries={tape} />
     </div>
   );
 }

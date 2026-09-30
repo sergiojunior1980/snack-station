@@ -4,13 +4,13 @@ import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { defaultSellerMenus, roleLabel, sellerMenus, type MenuId, type Role } from "@/lib/roles";
-import { createTeamMember, deleteTeamMember, resetSellerPassword, setSellerMenus, setUserRole, type ActionState } from "@/server/actions";
+import { createTeamMember, deleteTeamMember, resetSellerPassword, setMemberEmail, setSellerMenus, setUserRole, type ActionState } from "@/server/actions";
 
 export function TeamList({
   members,
   currentUserId,
 }: {
-  members: { id: string; full_name: string; username: string | null; role: Role; menus: MenuId[]; password: string | null }[];
+  members: { id: string; full_name: string; username: string | null; email: string | null; role: Role; menus: MenuId[]; password: string | null }[];
   currentUserId: string;
 }) {
   return (
@@ -25,7 +25,7 @@ export function TeamList({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="font-medium">{member.full_name}</p>
-              <p className="text-xs text-muted-foreground">{roleLabel(member.role)}</p>
+              <p className="text-xs text-muted-foreground">{roleLabel(member.role)}{member.email ? ` · ${member.email}` : " · sem e-mail"}</p>
               {member.role === "vendedor" ? (
                 <div className="mt-2 space-y-1 text-sm">
                   <p>Usuário: {member.username ?? "não definido"}</p>
@@ -40,6 +40,7 @@ export function TeamList({
               {member.id === currentUserId ? null : <DeleteMember member={member} />}
             </div>
           </div>
+          <MemberEmail member={member} />
           {member.role === "vendedor" ? <PasswordReset member={member} /> : null}
           {member.role === "vendedor" ? <MenuAccess member={member} /> : null}
         </li>
@@ -57,7 +58,7 @@ function CreateMember() {
     <form action={action} className="grid gap-3 rounded-2xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5">
       <div className="space-y-1.5 sm:col-span-2 lg:col-span-5">
         <h2 className="font-heading text-xl">Novo usuário</h2>
-        <p className="text-sm text-muted-foreground">O vendedor entra com o usuário e a senha que você definir aqui. Escolha os menus que ele poderá ver.</p>
+        <p className="text-sm text-muted-foreground">O vendedor entra com o usuário e a senha. O e-mail recebe o link quando ele esquecer o usuário ou a senha.</p>
       </div>
       <div className="space-y-2 sm:col-span-2 lg:col-span-5">
         <p className="text-sm font-medium">Menus</p>
@@ -83,6 +84,10 @@ function CreateMember() {
       <div className="space-y-1.5">
         <Label htmlFor="username">Usuário</Label>
         <Input id="username" name="username" required placeholder="maria" autoComplete="off" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="email">E-mail</Label>
+        <Input id="email" name="email" type="email" required placeholder="maria@email.com" autoComplete="off" />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="password">Senha</Label>
@@ -128,6 +133,22 @@ function DeleteMember({ member }: { member: { id: string; full_name: string } })
         </div>
       ) : null}
     </>
+  );
+}
+
+function MemberEmail({ member }: { member: { id: string; email: string | null } }) {
+  const [state, action, pending] = useActionState(setMemberEmail, null as ActionState);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-3">
+      <input type="hidden" name="userId" value={member.id} />
+      <div className="space-y-1.5">
+        <Label htmlFor={`email-${member.id}`}>E-mail para recuperação</Label>
+        <Input id={`email-${member.id}`} name="email" type="email" required defaultValue={member.email ?? ""} placeholder="maria@email.com" autoComplete="off" />
+      </div>
+      <Button type="submit" size="sm" variant="outline" disabled={pending}>{pending ? "Salvando…" : "Salvar e-mail"}</Button>
+      {state?.error ? <p className="w-full text-xs text-destructive">{state.error}</p> : null}
+      {state?.ok ? <p className="w-full text-xs text-emerald-700">{state.ok}</p> : null}
+    </form>
   );
 }
 

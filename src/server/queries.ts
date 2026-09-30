@@ -2,6 +2,7 @@ import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { defaultAppearance, isHexColor, type Appearance } from "@/lib/brand";
 import { canUseMenu, defaultSellerMenus, normalizeMenus, normalizeRole, type Role } from "@/lib/roles";
+import { slipRevenue } from "@/lib/cash-revenue";
 import type { CashSlip } from "@/lib/cash-slip";
 import type { ReportGrain } from "@/lib/dates";
 
@@ -54,20 +55,23 @@ export type Category = {
 
 export const requireUser = cache(async function requireUser() {
   const supabase = await createClient();
-  if (!supabase) return { supabase: null, user: null, name: "", role: "vendedor" as Role, menus: [...defaultSellerMenus] };
+  if (!supabase) return { supabase: null, user: null, name: "", role: "vendedor" as Role, menus: [...defaultSellerMenus], shopName: "", shopStatus: null as string | null };
   const { data } = await supabase.auth.getUser();
-  if (!data.user) return { supabase, user: null, name: "", role: "vendedor" as Role, menus: [...defaultSellerMenus] };
+  if (!data.user) return { supabase, user: null, name: "", role: "vendedor" as Role, menus: [...defaultSellerMenus], shopName: "", shopStatus: null as string | null };
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, role, menus")
+    .select("full_name, role, menus, tenants(name, status)")
     .eq("id", data.user.id)
     .maybeSingle();
+  const shop = Array.isArray(profile?.tenants) ? profile?.tenants[0] : profile?.tenants;
   return {
     supabase,
     user: data.user,
     name: profile?.full_name || data.user.email || "Equipe",
     role: normalizeRole(profile?.role),
     menus: normalizeMenus(profile?.menus),
+    shopName: shop?.name ?? "",
+    shopStatus: shop?.status ?? null,
   };
 });
 
@@ -188,6 +192,91 @@ export async function listPaymentMethods(kind: "recebimento" | "pagamento") {
   return rows.length ? rows : fallback;
 }
 
+const tapeModules = ["caixa_vendas", "compras_estoque", "cadastro_produtos", "perfis"] as const;
+export type TapeModule = (typeof tapeModules)[number];
+
+export const tapeModuleLabel: Record<TapeModule, string> = {
+  caixa_vendas: "Caixa e vendas",
+  compras_estoque: "Compras e estoque",
+  cadastro_produtos: "Cadastro de produtos",
+  perfis: "Equipe",
+};
+
+export async function listAudit(module?: string) {
+  const { supabase, role, menus } = await requireUser();
+  if (!supabase || !canUseMenu(role, menus, "auditoria")) return [];
+  const selected = tapeModules.find((item) => item === module);
+  let query = supabase.from("audit_tape").select("id, module, summary, created_at, created_by").order("id", { ascending: false }).limit(150);
+  if (selected) query = query.eq("module", selected);
+  const { data } = await query;
+  const rows = (data ?? []) as { id: number; module: TapeModule; summary: string; created_at: string; created_by: string | null }[];
+  const ids = [...new Set(rows.map((row) => row.created_by).filter((id): id is string => Boolean(id)))];
+  const names = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+    for (const profile of profiles ?? []) names.set(profile.id, profile.full_name);
+  }
+  return rows.map((row) => ({
+    id: row.id,
+    module: tapeModuleLabel[row.module] ?? row.module,
+    summary: row.summary,
+    created_at: row.created_at,
+    actor: (row.created_by && names.get(row.created_by)) || "Usuário não identificado",
+  }));
+}
+
+export async function cashSessionReport(from: Date, to: Date) {
+  const { supabase, role, menus } = await requireUser();
+  if (!supabase || !canUseMenu(role, menus, "relatorios")) return [];
+  const { data } = await supabase
+    .from("cash_sessions")
+    .select("id, opened_at, opening_cents, opening_note, opened_by, closed_at, closed_by, counted_cents, expected_cents, difference_cents, closing_note")
+    .order("opened_at", { ascending: false })
+    .limit(200);
+  const sessions = ((data ?? []) as {
+    id: string;
+    opened_at: string;
+    opening_cents: number;
+    opening_note: string | null;
+    opened_by: string;
+    closed_at: string | null;
+    closed_by: string | null;
+    counted_cents: number | null;
+    expected_cents: number | null;
+    difference_cents: number | null;
+    closing_note: string | null;
+  }[]).filter((session) => {
+    const opened = new Date(session.opened_at).getTime();
+    const closed = session.closed_at ? new Date(session.closed_at).getTime() : null;
+    return (opened >= from.getTime() && opened < to.getTime()) || (closed != null && closed >= from.getTime() && closed < to.getTime());
+  });
+  const ids = sessions.map((session) => session.id);
+  const people = [...new Set(sessions.flatMap((session) => [session.opened_by, session.closed_by].filter((id): id is string => Boolean(id))))];
+  const [{ data: movements }, { data: profiles }] = await Promise.all([
+    ids.length
+      ? supabase.from("cash_movements").select("session_id, kind, amount_cents").in("session_id", ids)
+      : Promise.resolve({ data: [] as { session_id: string; kind: "entrada" | "retirada"; amount_cents: number }[] }),
+    people.length
+      ? supabase.from("profiles").select("id, full_name").in("id", people)
+      : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
+  ]);
+  const names = new Map((profiles ?? []).map((profile) => [profile.id, profile.full_name]));
+  const flow = new Map<string, { inCents: number; outCents: number }>();
+  for (const movement of movements ?? []) {
+    const row = flow.get(movement.session_id) ?? { inCents: 0, outCents: 0 };
+    if (movement.kind === "entrada") row.inCents += movement.amount_cents;
+    else row.outCents += movement.amount_cents;
+    flow.set(movement.session_id, row);
+  }
+  return sessions.map((session) => ({
+    ...session,
+    openedBy: names.get(session.opened_by) || "Usuário não identificado",
+    closedBy: session.closed_by ? names.get(session.closed_by) || "Usuário não identificado" : "",
+    inCents: flow.get(session.id)?.inCents ?? 0,
+    outCents: flow.get(session.id)?.outCents ?? 0,
+  }));
+}
+
 export async function listTape(module: "caixa_vendas" | "compras_estoque" | "perfis" | "cadastro_produtos") {
   const { supabase, role, menus } = await requireUser();
   const allowed =
@@ -236,13 +325,13 @@ export async function listTeam() {
   const { supabase, role } = await requireUser();
   if (!supabase || role !== "admin") return [];
   const [{ data }, { data: secrets }] = await Promise.all([
-    supabase.from("profiles").select("id, full_name, username, role, menus, created_at").order("full_name"),
+    supabase.from("profiles").select("id, full_name, username, email, role, menus, created_at").order("full_name"),
     supabase.from("seller_passwords").select("user_id, password"),
   ]);
   const passwords = new Map(
     ((secrets ?? []) as { user_id: string; password: string }[]).map((item) => [item.user_id, item.password]),
   );
-  return ((data ?? []) as { id: string; full_name: string; username: string | null; role: Role; menus: unknown; created_at: string }[]).map(
+  return ((data ?? []) as { id: string; full_name: string; username: string | null; email: string | null; role: Role; menus: unknown; created_at: string }[]).map(
     (member) => ({ ...member, menus: normalizeMenus(member.menus), password: passwords.get(member.id) ?? null }),
   );
 }
@@ -366,6 +455,34 @@ export async function cashDesk() {
   };
 }
 
+type SessionSale = {
+  total_cents: number;
+  payment_method: string;
+  sale_payments: { payment_method: string; amount_cents: number }[] | null;
+};
+
+async function sessionSales(
+  supabase: NonNullable<Awaited<ReturnType<typeof requireUser>>["supabase"]>,
+  openedAt: string,
+  closedAt: string,
+) {
+  const sales: SessionSale[] = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("sales")
+      .select("total_cents, payment_method, sale_payments(payment_method, amount_cents)")
+      .gte("created_at", openedAt)
+      .lt("created_at", closedAt)
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error || !data) break;
+    sales.push(...(data as SessionSale[]));
+    if (data.length < pageSize) break;
+  }
+  return sales;
+}
+
 export async function cashClosingSlip(sessionId: string) {
   const { supabase, name } = await requireUser();
   if (!supabase) return null;
@@ -376,28 +493,30 @@ export async function cashClosingSlip(sessionId: string) {
     .maybeSingle();
   if (!session?.closed_at || session.counted_cents == null || session.expected_cents == null || session.difference_cents == null) return null;
 
-  const [{ data: methods }, { data: sales }, { data: movements }] = await Promise.all([
-    supabase.from("payment_methods").select("id, kind, counts_as_cash"),
-    supabase
-      .from("sales")
-      .select("sale_payments(payment_method, amount_cents)")
-      .gte("created_at", session.opened_at)
-      .lt("created_at", session.closed_at),
+  const [{ data: methods }, sales, { data: movements }] = await Promise.all([
+    supabase.from("payment_methods").select("id, name, kind, counts_as_cash, sort_order"),
+    sessionSales(supabase, session.opened_at, session.closed_at),
     supabase
       .from("cash_movements")
       .select("kind, amount_cents")
       .gte("created_at", session.opened_at)
       .lt("created_at", session.closed_at),
   ]);
+  const methodRows = (methods ?? []) as { id: string; name: string; kind: string; counts_as_cash: boolean; sort_order: number }[];
   const cashMethods = new Set(
-    ((methods ?? []) as { id: string; kind: string; counts_as_cash: boolean }[])
-      .filter((method) => method.kind === "recebimento" && method.counts_as_cash)
-      .map((method) => method.id),
+    methodRows.filter((method) => method.kind === "recebimento" && method.counts_as_cash).map((method) => method.id),
   );
-  const salesCents = ((sales ?? []) as { sale_payments: { payment_method: string; amount_cents: number }[] | null }[]).reduce(
-    (sum, sale) => sum + (sale.sale_payments ?? []).reduce((inner, payment) => inner + (cashMethods.has(payment.payment_method) ? payment.amount_cents : 0), 0),
-    0,
+  const payments = sales.flatMap((sale) => {
+    const parts = sale.sale_payments?.length
+      ? sale.sale_payments
+      : [{ payment_method: sale.payment_method, amount_cents: sale.total_cents }];
+    return parts.map((payment) => ({ method: payment.payment_method, cents: payment.amount_cents }));
+  });
+  const revenue = slipRevenue(
+    methodRows.map((method) => ({ id: method.id, name: method.name, kind: method.kind, sortOrder: method.sort_order })),
+    payments,
   );
+  const salesCents = payments.reduce((sum, payment) => sum + (cashMethods.has(payment.method) ? payment.cents : 0), 0);
   const moved = ((movements ?? []) as { kind: "entrada" | "retirada"; amount_cents: number }[]).reduce(
     (sum, movement) => {
       if (movement.kind === "entrada") sum.inCents += movement.amount_cents;
@@ -415,6 +534,8 @@ export async function cashClosingSlip(sessionId: string) {
     operator: name || "Responsável",
     openingCents: session.opening_cents as number,
     openingNote: (session.opening_note as string | null) ?? null,
+    revenue: revenue.lines,
+    billedCents: revenue.billedCents,
     salesCents,
     inCents: moved.inCents,
     outCents: moved.outCents,

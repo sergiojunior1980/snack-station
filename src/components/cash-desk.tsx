@@ -76,7 +76,7 @@ function PrintAsk({ slip, onDone }: { slip: CashSlip; onDone: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md space-y-3 rounded-2xl bg-card p-5 shadow-lg">
         <p className="font-heading text-xl">Imprimir o fechamento?</p>
-        <p className="text-sm text-muted-foreground">O comprovante traz os valores do turno e um espaço para assinatura.</p>
+        <p className="text-sm text-muted-foreground">O comprovante discrimina o faturamento do turno por forma de pagamento, os valores do caixa e um espaço para assinatura.</p>
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"

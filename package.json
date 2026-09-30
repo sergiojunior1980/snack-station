@@ -5,6 +5,9 @@
   "description": "Snack Station — estoque e vendas da estação de lanches",
   "scripts": {
     "dev": "next dev --port 43181 --hostname 0.0.0.0",
+    "env:status": "node scripts/env.mjs",
+    "env:local": "node scripts/env.mjs local",
+    "env:producao": "node scripts/env.mjs producao",
     "build": "next build",
     "start": "next start --port 43181 --hostname 0.0.0.0",
     "lint": "eslint",

@@ -1,10 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { canUseMenu, homeFor, normalizeMenus, normalizeRole, sellerMenus, type MenuId } from "@/lib/roles";
-import { loginToEmail, normalizeUsername } from "@/lib/username";
+import { normalizeShop, normalizeUsername, shopLoginEmail } from "@/lib/username";
 import { parseBRLToCents } from "@/lib/money";
 import { defaultAppearance, isHexColor } from "@/lib/brand";
 import { LOGO_MAX_BYTES, LOGO_SIZE_ERROR, LOGO_TYPE_ERROR, logoKind } from "@/lib/logo-file";
@@ -41,21 +42,83 @@ function message(error: { message: string }) {
 }
 
 export async function login(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const shop = normalizeShop(String(formData.get("shop") ?? ""));
   const username = String(formData.get("username") ?? "");
   const password = String(formData.get("password") ?? "");
-  if (normalizeUsername(username).length < 3 || password.length < 6) {
-    return { error: "Informe o usuário e uma senha com 6 caracteres ou mais." };
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(shop) || normalizeUsername(username).length < 3 || password.length < 6) {
+    return { error: "Informe o código da loja, o usuário e uma senha com 6 caracteres ou mais." };
   }
 
   const supabase = await db();
+  const normalized = normalizeUsername(username);
+  let email = shopLoginEmail(shop, normalized);
+  const { data: resolved, error: resolveError } = await supabase.rpc("login_auth_email", {
+    p_shop: shop,
+    p_username: normalized,
+  });
+  if (!resolveError && typeof resolved === "string" && resolved.includes("@")) email = resolved;
   const { data: sessionData, error } = await supabase.auth.signInWithPassword({
-    email: loginToEmail(username),
+    email,
     password,
   });
   if (error) return { error: message(error) };
-  const { data: profile } = await supabase.from("profiles").select("role, menus").eq("id", sessionData.user.id).maybeSingle();
-  const role = profile?.role === "admin" ? "admin" : "vendedor";
-  redirect(homeFor(role, normalizeMenus(profile?.menus)));
+  const { data: profile } = await supabase.from("profiles").select("role, menus, tenants(status)").eq("id", sessionData.user.id).maybeSingle();
+  const status = tenantStatus(profile?.tenants);
+  if (status === "suspended") {
+    await supabase.auth.signOut();
+    return { error: "Esta loja está suspensa." };
+  }
+  redirect(homeFor(normalizeRole(profile?.role), normalizeMenus(profile?.menus)));
+}
+
+function contactEmail(value: string) {
+  const email = value.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.endsWith("@usuarios.snackstation.local")) return null;
+  return email;
+}
+
+export async function requestPasswordReset(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const email = contactEmail(String(formData.get("email") ?? ""));
+  if (!email) return { error: "Informe o e-mail cadastrado na equipe." };
+  const headerList = await headers();
+  const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "127.0.0.1:43181";
+  const proto = headerList.get("x-forwarded-proto") ?? "http";
+  const supabase = await db();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${proto}://${host}/recuperar/nova-senha`,
+  });
+  if (error && !/user|not found|signup/i.test(error.message)) return { error: message(error) };
+  return { ok: "Se este e-mail estiver cadastrado, enviamos o usuário e um link para criar uma nova senha." };
+}
+
+export async function setRecoveredPassword(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm") ?? "");
+  if (password.length < 6) return { error: "A senha precisa ter pelo menos 6 caracteres." };
+  if (password !== confirm) return { error: "A confirmação precisa ser igual à nova senha." };
+  const supabase = await db();
+  const tokenHash = String(formData.get("tokenHash") ?? "");
+  const code = String(formData.get("code") ?? "");
+  if (tokenHash) {
+    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
+    if (error) return { error: "Este link expirou. Peça outro e-mail." };
+  } else if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) return { error: "Este link expirou. Peça outro e-mail." };
+  } else {
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) return { error: "Abra o link enviado por e-mail." };
+  }
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { error: message(error) };
+  await supabase.rpc("finish_password_recovery", { p_password: password });
+  await supabase.auth.signOut();
+  redirect("/login?aviso=senha");
+}
+
+function tenantStatus(value: { status?: string } | { status?: string }[] | null | undefined) {
+  const row = Array.isArray(value) ? value[0] : value;
+  return row?.status ?? null;
 }
 
 export async function register(): Promise<ActionState> {
@@ -66,6 +129,32 @@ export async function logout() {
   const supabase = await createClient();
   if (supabase) await supabase.auth.signOut();
   redirect("/login");
+}
+
+export async function createShop(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const supabase = await db();
+  const { error } = await supabase.rpc("create_shop", {
+    p_name: String(formData.get("name") ?? ""),
+    p_slug: normalizeShop(String(formData.get("slug") ?? "")),
+    p_admin_name: String(formData.get("adminName") ?? ""),
+    p_admin_username: normalizeUsername(String(formData.get("adminUsername") ?? "")),
+    p_admin_password: String(formData.get("adminPassword") ?? ""),
+  });
+  if (error) return { error: message(error) };
+  revalidatePath("/lojas");
+  return { ok: "Loja aberta. Passe o código, o usuário e a senha temporária para o cliente." };
+}
+
+export async function setShopStatus(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const status = formData.get("status") === "suspended" ? "suspended" : "active";
+  const supabase = await db();
+  const { error } = await supabase.rpc("set_shop_status", {
+    p_shop_id: String(formData.get("shopId") ?? ""),
+    p_status: status,
+  });
+  if (error) return { error: message(error) };
+  revalidatePath("/lojas");
+  return { ok: status === "suspended" ? "Loja suspensa." : "Loja reativada." };
 }
 
 const productSchema = z.object({
@@ -354,10 +443,11 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
   const supabase = await db();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { error: "Entre para salvar a aparência." };
-  const { data: profile } = await supabase.from("profiles").select("role, menus").eq("id", auth.user.id).maybeSingle();
-  if (!canUseMenu(normalizeRole(profile?.role), normalizeMenus(profile?.menus), "configuracoes")) {
+  const { data: profile } = await supabase.from("profiles").select("role, menus, tenant_id").eq("id", auth.user.id).maybeSingle();
+  if (!profile?.tenant_id || !canUseMenu(normalizeRole(profile?.role), normalizeMenus(profile?.menus), "configuracoes")) {
     return { error: "Este perfil não altera a aparência." };
   }
+  const tenantId = profile.tenant_id;
 
   const buttonColor = String(formData.get("buttonColor") ?? "");
   const backgroundColor = String(formData.get("backgroundColor") ?? "");
@@ -367,7 +457,7 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
   const { data: current } = await supabase.from("app_settings").select("value").eq("key", "brand_logo_url").maybeSingle();
   logoUrl = current?.value ?? "";
   if (formData.get("removeLogo") === "on") {
-    await supabase.storage.from("marca").remove(["logo.png", "logo.jpg", "logo.webp"]);
+    await supabase.storage.from("marca").remove([`${tenantId}/logo.png`, `${tenantId}/logo.jpg`, `${tenantId}/logo.webp`]);
     logoUrl = "";
   }
 
@@ -377,7 +467,7 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
     const kind = logoKind(new Uint8Array(await file.slice(0, 16).arrayBuffer()));
     if (!kind) return { error: LOGO_TYPE_ERROR };
     const ext = kind === "image/png" ? "png" : kind === "image/webp" ? "webp" : "jpg";
-    const path = `logo.${ext}`;
+    const path = `${tenantId}/logo.${ext}`;
     const { error: uploadError } = await supabase.storage.from("marca").upload(path, file, { contentType: kind, upsert: true });
     if (uploadError) return { error: message(uploadError) };
     const env = supabaseEnv();
@@ -385,10 +475,10 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
   }
 
   const { error } = await supabase.from("app_settings").upsert([
-    { key: "brand_button_color", value: buttonColor || defaultAppearance.buttonColor },
-    { key: "brand_background_color", value: backgroundColor || defaultAppearance.backgroundColor },
-    { key: "brand_logo_url", value: logoUrl },
-  ]);
+    { tenant_id: tenantId, key: "brand_button_color", value: buttonColor || defaultAppearance.buttonColor },
+    { tenant_id: tenantId, key: "brand_background_color", value: backgroundColor || defaultAppearance.backgroundColor },
+    { tenant_id: tenantId, key: "brand_logo_url", value: logoUrl },
+  ], { onConflict: "tenant_id,key" });
   if (error) return { error: message(error) };
   revalidatePath("/", "layout");
   return { ok: "Aparência atualizada." };
@@ -397,7 +487,15 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
 export async function saveCostMode(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const mode = formData.get("mode") === "maior" ? "maior" : "media";
   const supabase = await db();
-  const { error } = await supabase.from("app_settings").upsert({ key: "stock_cost_mode", value: mode });
+  const { data: auth } = await supabase.auth.getUser();
+  const { data: profile } = auth.user
+    ? await supabase.from("profiles").select("tenant_id").eq("id", auth.user.id).maybeSingle()
+    : { data: null };
+  if (!profile?.tenant_id) return { error: "Entre para salvar o custo." };
+  const { error } = await supabase.from("app_settings").upsert(
+    { tenant_id: profile.tenant_id, key: "stock_cost_mode", value: mode },
+    { onConflict: "tenant_id,key" },
+  );
   if (error) return { error: message(error) };
   revalidatePath("/produtos");
   return { ok: mode === "maior" ? "Custo pelo maior valor em estoque." : "Custo pela média do estoque." };
@@ -610,6 +708,18 @@ export async function deleteTeamMember(_prev: ActionState, formData: FormData): 
   return { ok: "Usuário excluído." };
 }
 
+export async function setMemberEmail(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const userId = String(formData.get("userId") ?? "");
+  const email = contactEmail(String(formData.get("email") ?? ""));
+  if (!userId) return { error: "Usuário não encontrado." };
+  if (!email) return { error: "Informe um e-mail válido, que receba mensagens." };
+  const supabase = await db();
+  const { error } = await supabase.rpc("set_member_email", { p_user_id: userId, p_email: email });
+  if (error) return { error: message(error) };
+  revalidatePath("/equipe");
+  return { ok: "E-mail salvo. A recuperação de senha usa esse endereço." };
+}
+
 export async function resetSellerPassword(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const userId = String(formData.get("userId") ?? "");
   const password = String(formData.get("password") ?? "");
@@ -631,16 +741,20 @@ export async function createTeamMember(_prev: ActionState, formData: FormData): 
         .min(3, "O usuário precisa ter pelo menos 3 letras.")
         .regex(/^[a-zA-Z0-9._-]+$/, "Use só letras e números no usuário."),
       password: z.string().min(6, "A senha precisa ter pelo menos 6 caracteres."),
+      email: z.string().trim().min(5, "Informe o e-mail."),
     })
     .safeParse({
       name: formData.get("name"),
       username: formData.get("username"),
       password: formData.get("password"),
+      email: formData.get("email"),
     });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   const menus = selectedMenus(formData);
   if (!menus.length) return { error: "Escolha pelo menos um menu." };
 
+  const email = contactEmail(parsed.data.email);
+  if (!email) return { error: "Informe um e-mail válido, que receba mensagens." };
   const username = normalizeUsername(parsed.data.username);
   const supabase = await db();
   const { error } = await supabase.rpc("create_seller", {
@@ -648,6 +762,7 @@ export async function createTeamMember(_prev: ActionState, formData: FormData): 
     p_username: username,
     p_password: parsed.data.password,
     p_menus: menus,
+    p_email: email,
   });
   if (error) return { error: message(error) };
 
@@ -849,8 +964,14 @@ export async function savePaymentMethod(_prev: ActionState, formData: FormData):
   if (kind !== "recebimento" && kind !== "pagamento") return { error: "Escolha recebimento ou pagamento." };
   if (name.length < 2 || !id) return { error: "Informe o nome da forma." };
   const supabase = await db();
+  const { data: auth } = await supabase.auth.getUser();
+  const { data: profile } = auth.user
+    ? await supabase.from("profiles").select("tenant_id").eq("id", auth.user.id).maybeSingle()
+    : { data: null };
+  if (!profile?.tenant_id) return { error: "Entre para salvar a forma." };
   const { error } = await supabase.from("payment_methods").upsert(
     {
+      tenant_id: profile.tenant_id,
       id,
       name,
       kind,
@@ -858,7 +979,7 @@ export async function savePaymentMethod(_prev: ActionState, formData: FormData):
       settles_balance: kind === "pagamento" && formData.get("settles_balance") === "on",
       active: formData.get("active") !== "off",
     },
-    { onConflict: "kind,id" },
+    { onConflict: "tenant_id,kind,id" },
   );
   if (error) return { error: message(error) };
   await supabase.rpc("append_tape", { p_module: "caixa_vendas", p_summary: `Forma de ${kind} salva: ${name}` });

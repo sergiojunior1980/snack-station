@@ -19,7 +19,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     );
   }
 
-  const { user, name, role, menus } = await requireUser();
+  const { supabase, user, name, role, menus, shopName, shopStatus } = await requireUser();
   if (!user) redirect("/login");
-  return <AppShell userName={name} role={role} menus={menus}>{children}</AppShell>;
+  if (shopStatus === "suspended") {
+    await supabase?.auth.signOut();
+    redirect("/login?aviso=suspensa");
+  }
+  return <AppShell userName={name} role={role} menus={menus} shopName={shopName}>{children}</AppShell>;
 }

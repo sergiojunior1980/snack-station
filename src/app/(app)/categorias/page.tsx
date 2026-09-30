@@ -1,11 +1,10 @@
 import { CategoryManager } from "@/components/category-manager";
 import { ModuleNav } from "@/components/module-nav";
 import { PageHero } from "@/components/page-hero";
-import { Tape } from "@/components/tape";
-import { listCategories, listTape } from "@/server/queries";
+import { listCategories } from "@/server/queries";
 
 export default async function CategoriesPage() {
-  const [categories, tape] = await Promise.all([listCategories(), listTape("compras_estoque")]);
+  const categories = await listCategories();
 
   return (
     <div className="space-y-4">
@@ -16,7 +15,6 @@ export default async function CategoriesPage() {
       />
       <ModuleNav items={[{ href: "/produtos", label: "Cadastro" }, { href: "/categorias", label: "Categorias" }]} />
       <CategoryManager categories={categories} />
-      <Tape title="Fita de compras e estoque" entries={tape} />
     </div>
   );
 }
