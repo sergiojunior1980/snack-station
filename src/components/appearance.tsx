@@ -51,7 +51,7 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
           {appearance.logoUrl ? (
             <img src={appearance.logoUrl} alt="Logo atual" className="mb-2 h-12 max-w-[10rem] object-contain" />
           ) : (
-            <p className="text-sm text-muted-foreground">Hoje aparece a palavra FISK.</p>
+            <p className="text-sm text-muted-foreground">Sem logo, o nome da loja aparece no lugar.</p>
           )}
           <Input
             id="logo"
@@ -87,7 +87,7 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
       {appearance.logoUrl ? (
         <label className="flex items-center text-sm">
           <input type="checkbox" name="removeLogo" className="mr-3 size-4 shrink-0 accent-primary" />
-          Voltar para a palavra FISK
+          Remover a logo
         </label>
       ) : null}
       {fileError && !state?.ok ? <p className="text-sm text-destructive">{fileError}</p> : null}

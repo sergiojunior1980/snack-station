@@ -80,24 +80,34 @@ export const requireUser = cache(async function requireUser() {
   };
 });
 
-export async function appearance(): Promise<Appearance> {
+export const appearance = cache(async (): Promise<Appearance> => {
   const supabase = await createClient();
   if (!supabase) return defaultAppearance;
-  const { data } = await supabase
-    .from("app_settings")
-    .select("key, value")
-    .in("key", ["brand_button_color", "brand_background_color", "brand_logo_url", "brand_tagline", "brand_tagline_note"]);
+  const [{ data }, { data: userData }] = await Promise.all([
+    supabase
+      .from("app_settings")
+      .select("key, value")
+      .in("key", ["brand_button_color", "brand_background_color", "brand_logo_url", "brand_tagline", "brand_tagline_note"]),
+    supabase.auth.getUser(),
+  ]);
+  let name = "";
+  if (userData.user) {
+    const { data: profile } = await supabase.from("profiles").select("tenants(name)").eq("id", userData.user.id).maybeSingle();
+    const shop = Array.isArray(profile?.tenants) ? profile.tenants[0] : profile?.tenants;
+    name = shop?.name?.trim() ?? "";
+  }
   const values = new Map((data ?? []).map((row) => [row.key, row.value]));
   const buttonColor = values.get("brand_button_color") ?? "";
   const backgroundColor = values.get("brand_background_color") ?? "";
   return {
+    name,
     buttonColor: isHexColor(buttonColor) ? buttonColor : defaultAppearance.buttonColor,
     backgroundColor: isHexColor(backgroundColor) ? backgroundColor : defaultAppearance.backgroundColor,
     logoUrl: values.get("brand_logo_url") ?? "",
     tagline: values.get("brand_tagline")?.trim() || defaultAppearance.tagline,
     taglineNote: values.get("brand_tagline_note")?.trim() || defaultAppearance.taglineNote,
   };
-}
+});
 
 export async function loginBrand(shop: string): Promise<LoginBrand> {
   const supabase = await createClient();
@@ -546,7 +556,7 @@ async function sessionSales(
 }
 
 export async function cashClosingSlip(sessionId: string) {
-  const { supabase, name } = await requireUser();
+  const { supabase, name, shopName } = await requireUser();
   if (!supabase) return null;
   const { data: session } = await supabase
     .from("cash_sessions")
@@ -590,6 +600,7 @@ export async function cashClosingSlip(sessionId: string) {
   const purchaseCents = session.opening_cents + salesCents + moved.inCents - moved.outCents - session.expected_cents;
 
   return {
+    shopName: shopName || "Loja",
     id: session.id as string,
     openedAt: session.opened_at as string,
     closedAt: session.closed_at as string,

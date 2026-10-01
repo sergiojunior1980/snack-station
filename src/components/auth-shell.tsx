@@ -39,7 +39,7 @@ export function AuthShell({
               "radial-gradient(800px 380px at 0% 0%, rgba(255,255,255,0.16), transparent 55%), radial-gradient(640px 360px at 100% 100%, rgba(7,7,30,0.28), transparent 50%)",
           }}
         />
-        <BrandLogo inverted className="relative" href="/login" logoUrl={brand.logoUrl} />
+        <BrandLogo inverted className="relative" href="/login" logoUrl={brand.logoUrl} name={brand.name} />
         <div className="relative mt-auto max-w-lg pb-8">
           <h1 className="font-heading text-5xl leading-[1.08] tracking-tight">{brand.tagline}</h1>
           <p className="mt-5 text-lg leading-relaxed text-primary-foreground/75">{brand.taglineNote}</p>
@@ -47,7 +47,7 @@ export function AuthShell({
       </aside>
       <div className="flex flex-col bg-background">
         <header className="flex h-16 items-center justify-between border-b border-border/80 bg-card px-6 lg:hidden">
-          <BrandLogo href="/login" logoUrl={brand.logoUrl} />
+          <BrandLogo href="/login" logoUrl={brand.logoUrl} name={brand.name} />
         </header>
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
           <p className="font-heading text-4xl tracking-tight">{title}</p>

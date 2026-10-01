@@ -44,8 +44,7 @@ export function LoginForm({ suspended = false, passwordReset = false }: { suspen
   const [username, setUsername] = useState<string | null>(null);
   const [remember, setRemember] = useState<boolean | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const rememberedShop = savedShop === "fisk" ? "fiskparaiso" : savedShop;
-  const shopValue = shop ?? (rememberedShop || "fiskparaiso");
+  const shopValue = shop ?? savedShop;
   const usernameValue = username ?? saved;
   const rememberUser = remember ?? (saved.length > 0 || savedShop.length > 0);
 
@@ -63,9 +62,13 @@ export function LoginForm({ suspended = false, passwordReset = false }: { suspen
         className="space-y-5 rounded-2xl border bg-card p-7 shadow-[0_8px_24px_rgba(58,36,22,0.05)]"
         onSubmit={() => {
           markSessionOpen();
-          if (rememberUser && usernameValue.trim()) {
-            localStorage.setItem(REMEMBER_USER_KEY, usernameValue.trim());
-            localStorage.setItem(REMEMBER_SHOP_KEY, shopValue.trim());
+          if (rememberUser) {
+            const shopCode = shopValue.trim();
+            const userName = usernameValue.trim();
+            if (shopCode) localStorage.setItem(REMEMBER_SHOP_KEY, shopCode);
+            else localStorage.removeItem(REMEMBER_SHOP_KEY);
+            if (userName) localStorage.setItem(REMEMBER_USER_KEY, userName);
+            else localStorage.removeItem(REMEMBER_USER_KEY);
           } else {
             localStorage.removeItem(REMEMBER_USER_KEY);
             localStorage.removeItem(REMEMBER_SHOP_KEY);
@@ -78,7 +81,7 @@ export function LoginForm({ suspended = false, passwordReset = false }: { suspen
             id="shop"
             name="shop"
             required
-            placeholder="fiskparaiso"
+            placeholder="código da loja"
             autoComplete="organization"
             value={shopValue}
             onChange={(event) => setShop(event.target.value)}
@@ -103,7 +106,7 @@ export function LoginForm({ suspended = false, passwordReset = false }: { suspen
             onChange={(event) => setRemember(event.target.checked)}
             className="mr-3 size-4 shrink-0 accent-primary"
           />
-          Guardar usuário neste aparelho
+          Guardar loja e usuário neste aparelho
         </label>
         <div className="space-y-1.5">
           <Label htmlFor="password">Senha</Label>

@@ -1,7 +1,8 @@
-export const defaultTagline = "O lanche sai. O estoque acompanha.";
-export const defaultTaglineNote = "Refrigerante, doce, biscoito e água — cada venda baixa o estoque e cada compra repõe, com o faturamento do dia na mão.";
+export const defaultTagline = "A venda sai. O estoque acompanha.";
+export const defaultTaglineNote = "Cada venda baixa o estoque e cada compra repõe, com o faturamento do dia na mão.";
 
 export const defaultAppearance = {
+  name: "",
   buttonColor: "#b8002e",
   backgroundColor: "#fff7f7",
   logoUrl: "",
@@ -19,7 +20,7 @@ export type LoginBrand = {
 };
 
 export const defaultLoginBrand: LoginBrand = {
-  name: "FISK",
+  name: "",
   logoUrl: "",
   tagline: defaultTagline,
   taglineNote: defaultTaglineNote,

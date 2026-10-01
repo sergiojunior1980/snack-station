@@ -9,14 +9,17 @@ export function BrandLogo({
   inverted = false,
   href = "/",
   logoUrl,
+  name,
 }: {
   className?: string;
   inverted?: boolean;
   href?: string;
   logoUrl?: string;
+  name?: string;
 }) {
   const appearance = useAppearance();
   const url = logoUrl === undefined ? appearance.logoUrl : logoUrl;
+  const label = (name === undefined ? appearance.name : name).trim() || "Loja";
 
   return (
     <Link href={href} className={cn("flex items-center gap-2.5", className)}>
@@ -27,14 +30,7 @@ export function BrandLogo({
           className={cn("h-9 max-w-[8.5rem] object-contain", inverted && "rounded-md bg-white px-2 py-1")}
         />
       ) : (
-        <>
-          <span className={cn("font-heading text-xl tracking-tight", inverted ? "text-white" : "text-primary")}>FISK</span>
-          <span className={cn("h-6 w-px", inverted ? "bg-white/40" : "bg-border")} />
-          <span className="leading-tight">
-            <span className={cn("block text-sm font-semibold tracking-tight", inverted && "text-white")}>Snack Station</span>
-            <span className={cn("block text-[11px]", inverted ? "text-white/75" : "text-muted-foreground")}>estação de lanches</span>
-          </span>
-        </>
+        <span className={cn("font-heading text-xl tracking-tight", inverted ? "text-white" : "text-primary")}>{label}</span>
       )}
     </Link>
   );

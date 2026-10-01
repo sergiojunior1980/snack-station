@@ -10,10 +10,13 @@ import "./globals.css";
 
 const montserrat = Montserrat({ variable: "--font-montserrat", subsets: ["latin"] });
 
-export const metadata: Metadata = {
-  title: "Snack Station — estoque e vendas",
-  description: "Controle de estoque, vendas e faturamento da estação de lanches.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const look = await appearance();
+  return {
+    title: look.name ? `${look.name} — estoque e vendas` : "Estoque e vendas",
+    description: "Controle de estoque, vendas e faturamento.",
+  };
+}
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const look = await appearance();

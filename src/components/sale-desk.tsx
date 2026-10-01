@@ -104,7 +104,7 @@ export function SaleDesk({
       <section className="space-y-4">
         <div className="relative">
           <Search className="pointer-events-none absolute top-3.5 left-3 size-4 text-muted-foreground" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar refrigerante, doce, biscoito..." className="pl-9" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar produto..." className="pl-9" />
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
           <FilterChip active={category === "todos"} onClick={() => setCategory("todos")}>
@@ -136,7 +136,7 @@ export function SaleDesk({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-medium">{product.name}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{categoryLabel(product.category)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{categories.find((item) => item.slug === product.category)?.name ?? categoryLabel(product.category)}</p>
                     </div>
                     <Badge
                       tone={empty ? "high" : product.stock_quantity <= product.min_stock ? "watch" : "ok"}

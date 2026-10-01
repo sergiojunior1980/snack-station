@@ -3,6 +3,7 @@ import { formatDateTime } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
 
 export type CashSlip = {
+  shopName: string;
   id: string;
   openedAt: string;
   closedAt: string;
@@ -60,7 +61,7 @@ export function cashSlipDocument(slip: CashSlip) {
   </style>
 </head>
 <body>
-  <h1>FISK | Snack Station</h1>
+  <h1>${text(slip.shopName || "Fechamento de caixa")}</h1>
   <h2>Comprovante de fechamento de caixa</h2>
   <p>Aberto em ${formatDateTime(slip.openedAt)}</p>
   <p>Fechado em ${formatDateTime(slip.closedAt)}</p>
