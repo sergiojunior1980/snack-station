@@ -2,104 +2,165 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const WIDTH = 76;
-const HEIGHT = 108;
+const HEIGHT = 210;
+const WIDTH = 186;
+const CHEER_MS = 2400;
+
+export function celebrateSale() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("snack-sale"));
+}
 
 export function FiskBuddy() {
-  const button = useRef<HTMLButtonElement>(null);
-  const motion = useRef({ x: 20, y: 0, vx: 1.8, vy: -1.2, walking: false, placed: false });
+  const root = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLButtonElement>(null);
+  const shadow = useRef<HTMLSpanElement>(null);
+  const motion = useRef({ x: 24, y: 0, dir: 1, walking: false, placed: false, celebrateUntil: 0, mouseX: 0, mouseY: 0 });
   const [walking, setWalking] = useState(false);
+  const [cheering, setCheering] = useState(false);
 
   useEffect(() => {
-    const node = button.current;
-    if (!node) return;
+    const node = root.current;
+    const figure = body.current;
+    const shade = shadow.current;
+    if (!node || !figure || !shade) return;
     const state = motion.current;
-    if (!state.placed) {
-      state.y = Math.max(16, window.innerHeight - HEIGHT - 96);
-      state.placed = true;
-    }
+    let cheerTimer = 0;
+    const onSale = () => {
+      state.celebrateUntil = performance.now() + CHEER_MS;
+      setCheering(true);
+      window.clearTimeout(cheerTimer);
+      cheerTimer = window.setTimeout(() => setCheering(false), CHEER_MS);
+    };
+    window.addEventListener("snack-sale", onSale);
+    const onMouse = (event: MouseEvent) => {
+      state.mouseX = event.clientX;
+      state.mouseY = event.clientY;
+    };
+    window.addEventListener("mousemove", onMouse);
     let frame = 0;
     let raf = 0;
     const tick = () => {
       frame += 1;
       const maxX = Math.max(8, window.innerWidth - WIDTH - 8);
       const maxY = Math.max(8, window.innerHeight - HEIGHT - 8);
-      if (state.walking) {
-        state.x += state.vx;
-        state.y += state.vy;
-        if (state.x <= 8 || state.x >= maxX) state.vx *= -1;
-        if (state.y <= 8 || state.y >= maxY) state.vy *= -1;
+      if (!state.placed) {
+        state.x = 24;
+        state.y = Math.max(8, window.innerHeight - HEIGHT - (window.innerWidth < 768 ? 78 : 18));
+        state.placed = true;
+      }
+      let lift = 0;
+      let sx = 1;
+      let sy = 1;
+      let tilt = 0;
+      const cheeringNow = performance.now() < state.celebrateUntil;
+      if (cheeringNow) {
+        const left = state.celebrateUntil - performance.now();
+        const elapsed = CHEER_MS - left;
+        const t = (elapsed % 420) / 420;
+        const hop = Math.sin(t * Math.PI);
+        lift = 8 + hop * 52;
+        sy = hop > 0.2 ? 1.08 + hop * 0.08 : 0.82;
+        sx = hop > 0.2 ? 0.94 : 1.16;
+        tilt = Math.sin(elapsed / 120) * 14;
+      } else if (state.walking) {
+        const targetX = Math.min(maxX, Math.max(8, state.mouseX - WIDTH / 2));
+        const targetY = Math.min(maxY, Math.max(8, state.mouseY - HEIGHT / 2));
+        const dx = targetX - state.x;
+        const dy = targetY - state.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 8) {
+          const speed = Math.min(8, Math.max(2.4, dist * 0.14));
+          state.x += (dx / dist) * speed;
+          state.y += (dy / dist) * speed;
+          if (Math.abs(dx) > 6) state.dir = dx > 0 ? 1 : -1;
+          const t = (frame % 28) / 28;
+          const hop = Math.sin(t * Math.PI);
+          const landing = t < 0.14 || t > 0.9;
+          lift = hop * 22;
+          sy = landing ? 0.86 : 1 + hop * 0.08;
+          sx = landing ? 1.12 : 1 - hop * 0.04;
+          tilt = state.dir * (4 + hop * 5);
+        }
         state.x = Math.min(maxX, Math.max(8, state.x));
         state.y = Math.min(maxY, Math.max(8, state.y));
+      } else {
+        lift = Math.sin(frame / 17) * 4;
+        tilt = Math.sin(frame / 23) * 4;
+        sy = 1 + Math.sin(frame / 19) * 0.025;
+        sx = 1 + Math.sin(frame / 19) * -0.02;
       }
-      const bob = state.walking ? Math.abs(Math.sin(frame / 3)) * -5 : Math.sin(frame / 16) * 2;
-      const face = state.vx < 0 ? -1 : 1;
       node.style.opacity = "1";
-      node.style.transform = `translate3d(${state.x}px, ${state.y + bob}px, 0) scaleX(${face})`;
+      node.style.transform = `translate3d(${state.x}px, ${state.y - lift}px, 0)`;
+      figure.style.transform = `scaleX(${state.dir}) scale(${sx}, ${sy}) rotate(${tilt}deg)`;
+      const shadowScale = Math.max(0.55, 1 - lift / 46);
+      shade.style.transform = `translateX(-50%) scaleX(${shadowScale})`;
+      shade.style.opacity = String(0.28 * shadowScale);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("snack-sale", onSale);
+      window.removeEventListener("mousemove", onMouse);
+      window.clearTimeout(cheerTimer);
+    };
   }, []);
 
   return (
-    <button
-      ref={button}
-      type="button"
-      aria-label={walking ? "Parar o Buddy" : "Fazer o Buddy andar"}
-      onClick={() => {
-        const state = motion.current;
-        state.walking = !state.walking;
-        if (state.walking) {
-          const angle = Math.random() * Math.PI * 2;
-          state.vx = Math.cos(angle) * 2.4;
-          state.vy = Math.sin(angle) * 2.1;
-          if (Math.abs(state.vx) < 1.3) state.vx = state.vx < 0 ? -1.8 : 1.8;
-        }
-        setWalking(state.walking);
-      }}
-      className="fixed top-0 left-0 z-30 h-[108px] w-[76px] cursor-pointer border-0 bg-transparent p-0 opacity-0"
-    >
-      <style>{`
-        @keyframes buddy-leg { 50% { transform: rotate(24deg); } }
-        @keyframes buddy-arm { 50% { transform: rotate(-18deg); } }
-        .buddy-walk .leg-l { transform-origin: 30px 78px; animation: buddy-leg 0.28s ease-in-out infinite; }
-        .buddy-walk .leg-r { transform-origin: 46px 78px; animation: buddy-leg 0.28s ease-in-out infinite reverse; }
-        .buddy-walk .arm-l { transform-origin: 18px 58px; animation: buddy-arm 0.28s ease-in-out infinite; }
-        .buddy-walk .arm-r { transform-origin: 58px 58px; animation: buddy-arm 0.28s ease-in-out infinite reverse; }
-        .buddy-idle .arm-l, .buddy-idle .arm-r { transform-origin: 38px 58px; animation: buddy-arm 1.6s ease-in-out infinite; }
-      `}</style>
-      <svg viewBox="0 0 76 108" className={walking ? "buddy-walk h-full w-full overflow-visible" : "buddy-idle h-full w-full overflow-visible"} aria-hidden="true">
-        <ellipse cx="38" cy="104" rx="18" ry="3.5" fill="rgba(7,7,30,0.18)" />
-        <g className="leg-l">
-          <rect x="24" y="78" width="12" height="18" rx="6" fill="#8a5a32" />
-          <ellipse cx="30" cy="96" rx="8" ry="5" fill="#6b4424" />
-        </g>
-        <g className="leg-r">
-          <rect x="40" y="78" width="12" height="18" rx="6" fill="#8a5a32" />
-          <ellipse cx="46" cy="96" rx="8" ry="5" fill="#6b4424" />
-        </g>
-        <g className="arm-l">
-          <rect x="4" y="56" width="16" height="10" rx="5" fill="#8a5a32" />
-          <circle cx="8" cy="61" r="6" fill="#a56b3c" />
-        </g>
-        <g className="arm-r">
-          <rect x="56" y="56" width="16" height="10" rx="5" fill="#8a5a32" />
-          <circle cx="68" cy="61" r="6" fill="#a56b3c" />
-        </g>
-        <rect x="16" y="48" width="44" height="34" rx="16" fill="#b8002e" />
-        <rect x="16" y="66" width="44" height="8" fill="#fff7f7" />
-        <circle cx="38" cy="34" r="20" fill="#a56b3c" />
-        <circle cx="22" cy="16" r="7" fill="#a56b3c" />
-        <circle cx="54" cy="16" r="7" fill="#a56b3c" />
-        <circle cx="22" cy="16" r="4" fill="#f2d2b0" />
-        <circle cx="54" cy="16" r="4" fill="#f2d2b0" />
-        <ellipse cx="38" cy="40" rx="10" ry="8" fill="#f2d2b0" />
-        <ellipse cx="38" cy="38" rx="4" ry="3" fill="#6b4424" />
-        <circle cx="31" cy="32" r="2" fill="#2a1614" />
-        <circle cx="45" cy="32" r="2" fill="#2a1614" />
-        <path d="M33 43c2 2 8 2 10 0" stroke="#6b4424" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-      </svg>
-    </button>
+    <div ref={root} className="pointer-events-none fixed top-0 left-0 z-30 opacity-0" style={{ width: WIDTH, height: HEIGHT }}>
+      {cheering ? (
+        <span className="absolute -top-7 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-semibold whitespace-nowrap text-primary-foreground">
+          Boa venda!
+        </span>
+      ) : null}
+      <span ref={shadow} className="absolute bottom-1 left-1/2 h-3 w-16 rounded-full bg-black/70" />
+      <button
+        ref={body}
+        type="button"
+        aria-label={walking ? "Parar o Buddy" : "Fazer o Buddy seguir o mouse"}
+        onClick={(event) => {
+          const state = motion.current;
+          state.walking = !state.walking;
+          state.mouseX = event.clientX;
+          state.mouseY = event.clientY;
+          setWalking(state.walking);
+        }}
+        className={`${cheering ? "buddy-cheer" : walking ? "buddy-walk" : "buddy-idle"} pointer-events-auto relative h-full w-full cursor-pointer border-0 bg-transparent p-0`}
+      >
+        <style>{`
+          @keyframes buddy-can { 50% { transform: rotate(-14deg) translateY(-3px); } }
+          @keyframes buddy-cookie { 50% { transform: rotate(16deg) translateY(-2px); } }
+          .buddy-can, .buddy-cookie { transform-origin: 50% 80%; }
+          .buddy-walk .buddy-can { animation: buddy-can 0.34s ease-in-out infinite; }
+          .buddy-walk .buddy-cookie { animation: buddy-cookie 0.34s ease-in-out infinite; }
+          .buddy-idle .buddy-can { animation: buddy-can 1.5s ease-in-out infinite; }
+          .buddy-idle .buddy-cookie { animation: buddy-cookie 1.5s ease-in-out infinite; }
+          .buddy-cheer .buddy-can { animation: buddy-can 0.2s ease-in-out infinite; }
+          .buddy-cheer .buddy-cookie { animation: buddy-cookie 0.2s ease-in-out infinite; }
+        `}</style>
+        <img src="/buddy.png" alt="" className="h-full w-full object-contain" />
+        <span className="buddy-can absolute top-[17%] left-[1%] w-[30%]">
+          <svg viewBox="0 0 48 72" className="h-auto w-full drop-shadow-md" aria-hidden="true">
+            <rect x="8" y="8" width="32" height="56" rx="8" fill="#c8102e" />
+            <rect x="8" y="8" width="32" height="8" rx="4" fill="#d7dde3" />
+            <rect x="8" y="54" width="32" height="10" rx="4" fill="#9aa3ab" />
+            <rect x="12" y="24" width="24" height="16" rx="3" fill="#fff7f7" />
+            <path d="M16 32c4 3 8-3 16 0" stroke="#c8102e" strokeWidth="2" fill="none" strokeLinecap="round" />
+          </svg>
+        </span>
+        <span className="buddy-cookie absolute top-[36%] right-[2%] w-[24%]">
+          <svg viewBox="0 0 64 64" className="h-auto w-full drop-shadow-md" aria-hidden="true">
+            <circle cx="32" cy="32" r="26" fill="#e2a15a" />
+            <circle cx="32" cy="32" r="26" fill="none" stroke="#c4843a" strokeWidth="3" />
+            <circle cx="22" cy="24" r="3.2" fill="#6b3a22" />
+            <circle cx="38" cy="22" r="2.6" fill="#6b3a22" />
+            <circle cx="30" cy="36" r="3" fill="#6b3a22" />
+            <circle cx="44" cy="36" r="2.4" fill="#6b3a22" />
+            <circle cx="20" cy="40" r="2.2" fill="#6b3a22" />
+          </svg>
+        </span>
+      </button>
+    </div>
   );
 }

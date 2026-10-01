@@ -10,6 +10,7 @@ import { Input, Select } from "@/components/ui/input";
 import { categoryLabel, paymentLabel } from "@/lib/catalog";
 import { formatDateTime } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
+import { celebrateSale } from "@/components/fisk-buddy";
 import { cancelSale, registerSale, type ActionState } from "@/server/actions";
 import type { Product } from "@/server/queries";
 
@@ -50,6 +51,7 @@ export function SaleDesk({
     setHandledState(state);
     setCart({});
     setPayments([{ key: crypto.randomUUID(), method: methods[0]?.id ?? "pix", amount: "" }]);
+    celebrateSale();
   }
 
   const visible = useMemo(() => {
