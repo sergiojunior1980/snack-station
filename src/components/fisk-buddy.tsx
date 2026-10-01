@@ -85,6 +85,7 @@ export function FiskBuddy() {
     celebrateUntil: 0,
     mouseX: 0,
     mouseY: 0,
+    seen: false,
     phase: 0,
   });
   const [cheering, setCheering] = useState(false);
@@ -115,9 +116,14 @@ export function FiskBuddy() {
     const onPointer = (event: PointerEvent) => {
       state.mouseX = event.clientX;
       state.mouseY = event.clientY;
+      state.seen = true;
+    };
+    const onPointerOut = (event: PointerEvent) => {
+      if (!event.relatedTarget) state.seen = false;
     };
     window.addEventListener("snack-sale", onSale);
     window.addEventListener("pointermove", onPointer);
+    window.addEventListener("pointerout", onPointerOut);
 
     const blit = (sx: number, sw: number, dx: number, dy: number, sy: number, sh: number) => {
       if (sw <= 0 || sh <= 0 || !picture.naturalWidth) return;
@@ -133,21 +139,26 @@ export function FiskBuddy() {
       if (!state.placed) {
         state.x = 24;
         state.y = Math.max(8, window.innerHeight - HEIGHT - (window.innerWidth < 768 ? 78 : 18));
-        state.mouseX = state.x + WIDTH / 2;
-        state.mouseY = state.y + HEIGHT / 2;
         state.placed = true;
       }
 
       const cheeringNow = performance.now() < state.celebrateUntil;
+      const rect = node.getBoundingClientRect();
+      const over =
+        state.seen &&
+        state.mouseX >= rect.left &&
+        state.mouseX <= rect.right &&
+        state.mouseY >= rect.top &&
+        state.mouseY <= rect.bottom;
       const targetX = Math.min(maxX, Math.max(8, state.mouseX - WIDTH / 2));
       const targetY = Math.min(maxY, Math.max(8, state.mouseY - HEIGHT / 2));
       const dx = targetX - state.x;
       const dy = targetY - state.y;
       const dist = Math.hypot(dx, dy);
-      const moving = !cheeringNow && dist > 14;
+      const moving = over && !cheeringNow && dist > 6;
 
       if (moving) {
-        const speed = Math.min(7.2, Math.max(2.2, dist * 0.13));
+        const speed = Math.min(16, Math.max(3.5, dist * 0.45));
         state.x += (dx / dist) * speed;
         state.y += (dy / dist) * speed;
         if (Math.abs(dx) > 10) state.dir = dx > 0 ? 1 : -1;
@@ -158,7 +169,7 @@ export function FiskBuddy() {
       state.x = Math.min(maxX, Math.max(8, state.x));
       state.y = Math.min(maxY, Math.max(8, state.y));
 
-      const amp = cheeringNow ? 1.15 : moving ? 1 : 0.32;
+      const amp = cheeringNow ? 1.15 : moving ? 1 : 0.08;
       const look = Math.max(-1, Math.min(1, dx / 160));
       const lean = moving ? state.dir : look * 0.35;
       let lift = 0;
@@ -179,7 +190,7 @@ export function FiskBuddy() {
         sx = hop > 0.55 ? 0.97 : 1.06;
         tilt = state.dir * (3 + hop * 4);
       } else {
-        lift = Math.sin(frame / 17) * 5;
+        lift = Math.sin(frame / 28) * 2;
         tilt = Math.sin(frame / 23) * 3 + look * 4;
         sy = 1 + Math.sin(frame / 19) * 0.03;
         sx = 1 - Math.sin(frame / 19) * 0.02;
@@ -228,6 +239,7 @@ export function FiskBuddy() {
       cancelAnimationFrame(raf);
       window.removeEventListener("snack-sale", onSale);
       window.removeEventListener("pointermove", onPointer);
+      window.removeEventListener("pointerout", onPointerOut);
       window.clearTimeout(cheerTimer);
     };
   }, []);
