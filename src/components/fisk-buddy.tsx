@@ -86,6 +86,9 @@ export function FiskBuddy() {
     mouseX: 0,
     mouseY: 0,
     seen: false,
+    nudgeX: 0,
+    nudgeY: 0,
+    stride: 0,
     phase: 0,
   });
   const [cheering, setCheering] = useState(false);
@@ -114,6 +117,28 @@ export function FiskBuddy() {
       cheerTimer = window.setTimeout(() => setCheering(false), CHEER_MS);
     };
     const onPointer = (event: PointerEvent) => {
+      if (!state.seen) {
+        state.mouseX = event.clientX;
+        state.mouseY = event.clientY;
+        state.seen = true;
+        return;
+      }
+      const rect = node.getBoundingClientRect();
+      const over = pointerOnBuddy(rect, event.clientX, event.clientY);
+      if (over && performance.now() >= state.celebrateUntil) {
+        let mdx = event.clientX - state.mouseX;
+        let mdy = event.clientY - state.mouseY;
+        const mag = Math.hypot(mdx, mdy);
+        if (mag > 70) {
+          mdx *= 70 / mag;
+          mdy *= 70 / mag;
+        }
+        state.nudgeX += mdx * 0.22;
+        state.nudgeY += mdy * 0.22;
+      } else {
+        state.nudgeX = 0;
+        state.nudgeY = 0;
+      }
       state.mouseX = event.clientX;
       state.mouseY = event.clientY;
       state.seen = true;
@@ -144,34 +169,39 @@ export function FiskBuddy() {
 
       const cheeringNow = performance.now() < state.celebrateUntil;
       const rect = node.getBoundingClientRect();
-      const over =
-        state.seen &&
-        state.mouseX >= rect.left &&
-        state.mouseX <= rect.right &&
-        state.mouseY >= rect.top &&
-        state.mouseY <= rect.bottom;
-      const targetX = Math.min(maxX, Math.max(8, state.mouseX - WIDTH / 2));
-      const targetY = Math.min(maxY, Math.max(8, state.mouseY - HEIGHT / 2));
-      const dx = targetX - state.x;
-      const dy = targetY - state.y;
-      const dist = Math.hypot(dx, dy);
-      const moving = over && !cheeringNow && dist > 6;
+      const over = state.seen && pointerOnBuddy(rect, state.mouseX, state.mouseY);
+      if (!over) {
+        state.nudgeX = 0;
+        state.nudgeY = 0;
+      }
+      const travel = over && !cheeringNow ? Math.hypot(state.nudgeX, state.nudgeY) : 0;
+      const moving = travel > 0.55;
 
-      if (moving) {
-        const speed = Math.min(16, Math.max(3.5, dist * 0.45));
-        state.x += (dx / dist) * speed;
-        state.y += (dy / dist) * speed;
-        if (Math.abs(dx) > 10) state.dir = dx > 0 ? 1 : -1;
-        state.phase += 0.34;
+      if (cheeringNow) {
+        state.nudgeX = 0;
+        state.nudgeY = 0;
+        state.phase += 0.5;
+        state.stride += (1 - state.stride) * 0.2;
+      } else if (moving) {
+        state.x += state.nudgeX;
+        state.y += state.nudgeY;
+        if (Math.abs(state.nudgeX) > 0.6) state.dir = state.nudgeX > 0 ? 1 : -1;
+        state.phase += Math.min(0.58, 0.18 + travel * 0.05);
+        state.stride += (1 - state.stride) * 0.28;
+        state.nudgeX = 0;
+        state.nudgeY = 0;
       } else {
-        state.phase += cheeringNow ? 0.55 : 0.045;
+        state.nudgeX = 0;
+        state.nudgeY = 0;
+        state.phase += 0.055;
+        state.stride += (0 - state.stride) * 0.24;
       }
       state.x = Math.min(maxX, Math.max(8, state.x));
       state.y = Math.min(maxY, Math.max(8, state.y));
 
-      const amp = cheeringNow ? 1.15 : moving ? 1 : 0.08;
-      const look = Math.max(-1, Math.min(1, dx / 160));
-      const lean = moving ? state.dir : look * 0.35;
+      const amp = cheeringNow ? 1.2 : state.stride;
+      const life = cheeringNow ? 1 : 0.55;
+      const lean = moving || state.stride > 0.2 ? state.dir : Math.sin(state.phase) * 0.4;
       let lift = 0;
       let sx = 1;
       let sy = 1;
@@ -183,47 +213,50 @@ export function FiskBuddy() {
         sy = hop > 0.2 ? 1.08 + hop * 0.08 : 0.82;
         sx = hop > 0.2 ? 0.94 : 1.16;
         tilt = Math.sin(elapsed / 120) * 14;
-      } else if (moving) {
+      } else if (state.stride > 0.08) {
         const hop = Math.abs(Math.sin(state.phase));
-        lift = hop * 20;
-        sy = hop > 0.55 ? 1.05 : 0.94;
-        sx = hop > 0.55 ? 0.97 : 1.06;
-        tilt = state.dir * (3 + hop * 4);
+        const landing = hop < 0.22;
+        lift = hop * 28 * state.stride;
+        sy = 1 + (landing ? -0.12 : hop * 0.1) * state.stride;
+        sx = 1 + (landing ? 0.1 : -hop * 0.06) * state.stride;
+        tilt = state.dir * (6 + hop * 8) * state.stride;
       } else {
-        lift = Math.sin(frame / 28) * 2;
-        tilt = Math.sin(frame / 23) * 3 + look * 4;
-        sy = 1 + Math.sin(frame / 19) * 0.03;
-        sx = 1 - Math.sin(frame / 19) * 0.02;
+        lift = 4 + Math.sin(frame / 18) * 7;
+        tilt = Math.sin(frame / 15) * 6;
+        sy = 1 + Math.sin(frame / 14) * 0.055;
+        sx = 1 - Math.sin(frame / 14) * 0.04;
       }
 
       if (picture.naturalWidth) {
         ctx.clearRect(0, 0, IMG_W, IMG_H);
-        const hand = offsets(112, state.phase, amp, look, lean);
-        const thumb = offsets(178, state.phase, amp, look, lean);
-        drawCan(ctx, 70 + hand.body + hand.ldx, 18 + hand.ldy, -state.phase * 0.35 * amp);
+        const hand = offsets(112, state.phase, amp, life, lean);
+        const thumb = offsets(178, state.phase, amp, life, lean);
+        drawCan(ctx, 70 + hand.body + hand.ldx, 18 + hand.ldy, -state.phase * 0.45 * Math.max(amp, life * 0.7));
         for (let sy0 = 0; sy0 < IMG_H; sy0 += SLICE) {
           const sh = Math.min(SLICE + 1, IMG_H - sy0);
           const y = sy0 + SLICE / 2;
-          const pose = offsets(y, state.phase, amp, look, lean);
+          const pose = offsets(y, state.phase, amp, life, lean);
+          const bob = y < 468 ? -Math.abs(Math.sin(state.phase)) * 14 * amp : 0;
           if (y < 468) {
             if (y < 190) {
-              blit(0, 172, pose.body + pose.ldx, pose.ldy, sy0, sh);
-              blit(172, 268, pose.body, 0, sy0, sh);
+              blit(0, 172, pose.body + pose.ldx, pose.ldy + bob, sy0, sh);
+              blit(172, 268, pose.body, bob, sy0, sh);
             } else {
-              blit(0, 440, pose.body, 0, sy0, sh);
+              blit(0, 440, pose.body, bob, sy0, sh);
             }
-            if (y < 252) blit(440, IMG_W - 440, pose.body + pose.rdx, pose.rdy, sy0, sh);
-            else blit(440, IMG_W - 440, pose.body, 0, sy0, sh);
+            if (y < 252) blit(440, IMG_W - 440, pose.body + pose.rdx, pose.rdy + bob, sy0, sh);
+            else blit(440, IMG_W - 440, pose.body, bob, sy0, sh);
           } else {
-            const k = Math.min(1, (y - 455) / 175);
-            const swing = Math.sin(state.phase) * 62 * amp * k;
-            const liftL = Math.max(0, Math.sin(state.phase)) * 40 * amp * k;
-            const liftR = Math.max(0, -Math.sin(state.phase)) * 40 * amp * k;
+            const k = Math.min(1, (y - 450) / 160);
+            const step = Math.sin(state.phase);
+            const swing = step * 100 * amp * k;
+            const liftL = Math.pow(Math.max(0, step), 0.7) * 72 * amp * k;
+            const liftR = Math.pow(Math.max(0, -step), 0.7) * 72 * amp * k;
             blit(0, 266, pose.body - swing, -liftL, sy0, sh);
             blit(256, IMG_W - 256, pose.body + swing, -liftR, sy0, sh);
           }
         }
-        drawCookie(ctx, 518 + thumb.body + thumb.rdx, 188 + thumb.rdy, state.phase * 0.4 * amp);
+        drawCookie(ctx, 518 + thumb.body + thumb.rdx, 188 + thumb.rdy, state.phase * 0.5 * Math.max(amp, life * 0.7));
       }
 
       node.style.opacity = "1";
@@ -259,15 +292,26 @@ export function FiskBuddy() {
   );
 }
 
-function offsets(y: number, phase: number, amp: number, look: number, lean: number) {
-  const body = lean * (0.5 - y / IMG_H) * 30 + look * Math.max(0, (236 - y) / 236) * 18;
-  const lAmp = y < 190 ? Math.max(0, (190 - y) / 130) : 0;
-  const rAmp = y < 252 ? Math.max(0, (252 - y) / 150) : 0;
+function pointerOnBuddy(rect: DOMRect, x: number, y: number) {
+  const insetX = rect.width * 0.1;
+  const insetY = rect.height * 0.08;
+  return x >= rect.left + insetX && x <= rect.right - insetX && y >= rect.top + insetY && y <= rect.bottom - insetY;
+}
+
+function offsets(y: number, phase: number, stride: number, life: number, lean: number) {
+  const step = Math.sin(phase);
+  const sway = Math.cos(phase);
+  const head = Math.max(0, (250 - y) / 250);
+  const hip = y > 280 ? Math.min(1, (y - 280) / 220) : 0;
+  const arm = Math.max(stride, life * 0.65);
+  const body = lean * (0.42 - y / IMG_H) * 40 * Math.max(stride, 0.35) + sway * stride * 18 * hip - sway * life * 16 * head;
+  const lAmp = y < 208 ? Math.max(0, (208 - y) / 120) : 0;
+  const rAmp = y < 272 ? Math.max(0, (272 - y) / 140) : 0;
   return {
     body,
-    ldx: -Math.sin(phase) * 46 * amp * lAmp,
-    ldy: Math.cos(phase) * 14 * amp * lAmp,
-    rdx: Math.sin(phase) * 40 * amp * rAmp,
-    rdy: -Math.cos(phase) * 12 * amp * rAmp,
+    ldx: -step * 82 * arm * lAmp,
+    ldy: Math.cos(phase + 0.5) * 28 * arm * lAmp,
+    rdx: step * 74 * arm * rAmp,
+    rdy: -Math.cos(phase + 0.5) * 24 * arm * rAmp,
   };
 }
