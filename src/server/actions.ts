@@ -527,6 +527,32 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
   return { ok: "Aparência atualizada." };
 }
 
+export async function saveSaleFilters(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const supabase = await db();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return { error: "Entre para salvar os parâmetros." };
+  const { data: profile } = await supabase.from("profiles").select("role, menus, tenant_id").eq("id", auth.user.id).maybeSingle();
+  if (!profile?.tenant_id || !canUseMenu(normalizeRole(profile?.role), normalizeMenus(profile?.menus), "configuracoes")) {
+    return { error: "Este perfil não altera os parâmetros." };
+  }
+  const asked = [...new Set(formData.getAll("category").map((value) => String(value)))];
+  if (asked.some((slug) => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))) return { error: "Escolha categorias da loja." };
+  const { data: known } = asked.length
+    ? await supabase.from("categories").select("slug, sort_order").in("slug", asked).order("sort_order")
+    : { data: [] as { slug: string; sort_order: number }[] };
+  const found = new Set((known ?? []).map((category) => category.slug));
+  if (asked.some((slug) => !found.has(slug))) return { error: "Escolha categorias da loja." };
+  const slugs = (known ?? []).map((category) => category.slug);
+  const { error } = await supabase.from("app_settings").upsert(
+    { tenant_id: profile.tenant_id, key: "sale_filter_categories", value: JSON.stringify(slugs) },
+    { onConflict: "tenant_id,key" },
+  );
+  if (error) return { error: message(error) };
+  revalidatePath("/vendas");
+  revalidatePath("/configuracoes");
+  return { ok: "Parâmetros atualizados." };
+}
+
 export async function saveCostMode(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const mode = formData.get("mode") === "maior" ? "maior" : "media";
   const supabase = await db();

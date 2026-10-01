@@ -408,6 +408,20 @@ export async function listTeam() {
   );
 }
 
+export async function saleFilterSlugs() {
+  const { supabase } = await requireUser();
+  if (!supabase) return null;
+  const { data } = await supabase.from("app_settings").select("value").eq("key", "sale_filter_categories").maybeSingle();
+  if (!data?.value) return null;
+  try {
+    const parsed = JSON.parse(data.value) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter((item): item is string => typeof item === "string");
+  } catch {
+    return null;
+  }
+}
+
 export async function listCategories() {
   const { supabase } = await requireUser();
   if (!supabase) return [];

@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState, useSyncExternalStore } from "react";
+import { useActionState, useState, useSyncExternalStore } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
@@ -26,17 +25,7 @@ function readRememberedShop() {
   return localStorage.getItem(REMEMBER_SHOP_KEY) ?? "";
 }
 
-function publishShop(shop: string) {
-  const code = shop.trim().toLowerCase();
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(code)) return;
-  const current = document.cookie.split("; ").find((item) => item.startsWith("snack-shop="))?.split("=")[1];
-  if (current === code) return;
-  document.cookie = `snack-shop=${code}; path=/; max-age=31536000; samesite=lax`;
-  return true;
-}
-
 export function LoginForm({ suspended = false, passwordReset = false }: { suspended?: boolean; passwordReset?: boolean }) {
-  const router = useRouter();
   const [state, action, pending] = useActionState(login, null as ActionState);
   const saved = useSyncExternalStore(subscribeRemembered, readRememberedUser, () => "");
   const savedShop = useSyncExternalStore(subscribeRemembered, readRememberedShop, () => "");
@@ -47,13 +36,6 @@ export function LoginForm({ suspended = false, passwordReset = false }: { suspen
   const shopValue = shop ?? savedShop;
   const usernameValue = username ?? saved;
   const rememberUser = remember ?? (saved.length > 0 || savedShop.length > 0);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      if (publishShop(shopValue)) router.refresh();
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [shopValue, router]);
 
   return (
     <AuthShell title="Entrar" description="Informe o código da loja, o usuário e a senha.">
