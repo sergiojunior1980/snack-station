@@ -10,6 +10,7 @@ import { canUseMenu, roleLabel, type MenuId, type Role } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { clearSessionMark } from "@/lib/browser-session";
 import { BrowserSession } from "@/components/browser-session";
+import { FiskBuddy } from "@/components/fisk-buddy";
 import { logout } from "@/server/actions";
 
 type NavChild = { href: string; label: string; admin?: boolean; hash?: string; children?: NavChild[] };
@@ -303,6 +304,7 @@ export function AppShell({
           })}
         </nav>
       </div>
+      <FiskBuddy />
     </div>
     </BrowserSession>
   );
