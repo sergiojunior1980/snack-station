@@ -55,6 +55,7 @@ export type Category = {
   id: string;
   name: string;
   slug: string;
+  active: boolean;
   fields: CategoryField[];
 };
 
@@ -408,32 +409,19 @@ export async function listTeam() {
   );
 }
 
-export async function saleFilterSlugs() {
-  const { supabase } = await requireUser();
-  if (!supabase) return null;
-  const { data } = await supabase.from("app_settings").select("value").eq("key", "sale_filter_categories").maybeSingle();
-  if (!data?.value) return null;
-  try {
-    const parsed = JSON.parse(data.value) as unknown;
-    if (!Array.isArray(parsed)) return null;
-    return parsed.filter((item): item is string => typeof item === "string");
-  } catch {
-    return null;
-  }
-}
-
 export async function listCategories() {
   const { supabase } = await requireUser();
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("categories")
-    .select("id, name, slug, category_fields(key, label, field_type, unit, options, required, sort_order)")
+    .select("id, name, slug, active, category_fields(key, label, field_type, unit, options, required, sort_order)")
     .order("sort_order");
   if (error || !Array.isArray(data)) return [];
   return data.map((category) => ({
     id: category.id,
     name: category.name,
     slug: category.slug,
+    active: category.active !== false,
     fields: [...(Array.isArray(category.category_fields) ? category.category_fields : [])].sort(
       (a, b) => a.sort_order - b.sort_order,
     ),

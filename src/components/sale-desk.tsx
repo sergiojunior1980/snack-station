@@ -16,13 +16,11 @@ import type { Product } from "@/server/queries";
 export function SaleDesk({
   products = [],
   categories = [],
-  filterSlugs = null,
   cashOpen = true,
   methods = [],
 }: {
   products: Product[];
   categories?: { slug: string; name: string }[];
-  filterSlugs?: string[] | null;
   cashOpen?: boolean;
   methods?: { id: string; name: string; counts_as_cash?: boolean }[];
 }) {
@@ -112,9 +110,7 @@ export function SaleDesk({
           <FilterChip active={category === "todos"} onClick={() => setCategory("todos")}>
             Tudo
           </FilterChip>
-          {(categories ?? [])
-            .filter((item) => filterSlugs == null || filterSlugs.includes(item.slug))
-            .map((item) => (
+          {(categories ?? []).map((item) => (
             <FilterChip key={item.slug} active={category === item.slug} onClick={() => setCategory(item.slug)}>
               {item.name}
             </FilterChip>

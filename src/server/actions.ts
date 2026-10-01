@@ -527,32 +527,6 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
   return { ok: "Aparência atualizada." };
 }
 
-export async function saveSaleFilters(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const supabase = await db();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return { error: "Entre para salvar os parâmetros." };
-  const { data: profile } = await supabase.from("profiles").select("role, menus, tenant_id").eq("id", auth.user.id).maybeSingle();
-  if (!profile?.tenant_id || !canUseMenu(normalizeRole(profile?.role), normalizeMenus(profile?.menus), "configuracoes")) {
-    return { error: "Este perfil não altera os parâmetros." };
-  }
-  const asked = [...new Set(formData.getAll("category").map((value) => String(value)))];
-  if (asked.some((slug) => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))) return { error: "Escolha categorias da loja." };
-  const { data: known } = asked.length
-    ? await supabase.from("categories").select("slug, sort_order").in("slug", asked).order("sort_order")
-    : { data: [] as { slug: string; sort_order: number }[] };
-  const found = new Set((known ?? []).map((category) => category.slug));
-  if (asked.some((slug) => !found.has(slug))) return { error: "Escolha categorias da loja." };
-  const slugs = (known ?? []).map((category) => category.slug);
-  const { error } = await supabase.from("app_settings").upsert(
-    { tenant_id: profile.tenant_id, key: "sale_filter_categories", value: JSON.stringify(slugs) },
-    { onConflict: "tenant_id,key" },
-  );
-  if (error) return { error: message(error) };
-  revalidatePath("/vendas");
-  revalidatePath("/configuracoes");
-  return { ok: "Parâmetros atualizados." };
-}
-
 export async function saveCostMode(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const mode = formData.get("mode") === "maior" ? "maior" : "media";
   const supabase = await db();
@@ -959,7 +933,7 @@ export async function saveCategory(_prev: ActionState, formData: FormData): Prom
   } else {
     const slug = slugify(name);
     if (!slug) return { error: "Use um nome com letras." };
-    const { data, error } = await supabase.from("categories").insert({ name, slug }).select("id").single();
+    const { data, error } = await supabase.from("categories").insert({ name, slug, active: true }).select("id").single();
     if (error || !data) return { error: error ? message(error) : "Não foi possível criar a categoria." };
     await supabase.rpc("append_tape", { p_module: "compras_estoque", p_summary: `Categoria criada: ${name}` });
   }
@@ -967,6 +941,19 @@ export async function saveCategory(_prev: ActionState, formData: FormData): Prom
   revalidatePath("/categorias");
   revalidatePath("/vendas");
   return { ok: id ? "Categoria atualizada." : "Categoria criada." };
+}
+
+export async function setCategoryActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = String(formData.get("id") ?? "");
+  const active = String(formData.get("active") ?? "") === "true";
+  if (!id) return { error: "Categoria inválida." };
+  const supabase = await db();
+  const { data, error } = await supabase.from("categories").update({ active }).eq("id", id).select("name").maybeSingle();
+  if (error || !data) return { error: error ? message(error) : "Categoria não encontrada." };
+  await supabase.rpc("append_tape", { p_module: "compras_estoque", p_summary: `${active ? "Categoria ativa" : "Categoria inativa"}: ${data.name}` });
+  revalidatePath("/categorias");
+  revalidatePath("/vendas");
+  return { ok: active ? "Categoria ativa." : "Categoria inativa." };
 }
 
 export async function deleteCategory(_prev: ActionState, formData: FormData): Promise<ActionState> {

@@ -1,23 +1,18 @@
 import { AppearanceForm } from "@/components/appearance";
 import { PageHero } from "@/components/page-hero";
-import { SaleFilterForm } from "@/components/sale-filter-form";
-import { SettingsTabs } from "@/components/settings-tabs";
-import { appearance, listCategories, saleFilterSlugs } from "@/server/queries";
+import { appearance } from "@/server/queries";
 
 export default async function SettingsPage() {
-  const [look, categories, filters] = await Promise.all([appearance(), listCategories(), saleFilterSlugs()]);
+  const look = await appearance();
 
   return (
     <div className="space-y-4">
       <PageHero
         eyebrow="Configurações"
-        title="Ajustes da loja"
-        description="A aparência vale para todo o sistema. Os parâmetros escolhem o que aparece na venda."
+        title="Aparência da loja"
+        description="A cor dos botões, o fundo, a logo e a frase da entrada valem para todo o sistema."
       />
-      <SettingsTabs
-        aparencia={<AppearanceForm appearance={look} />}
-        parametros={<SaleFilterForm categories={categories.map((category) => ({ slug: category.slug, name: category.name }))} selected={filters} />}
-      />
+      <AppearanceForm appearance={look} />
     </div>
   );
 }

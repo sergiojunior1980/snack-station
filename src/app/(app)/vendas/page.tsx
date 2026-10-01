@@ -1,14 +1,13 @@
 import { PageHero } from "@/components/page-hero";
 import { RecentSales, SaleDesk, type RecentSale } from "@/components/sale-desk";
-import { cashIsOpen, listCategories, listPaymentMethods, listProducts, recentSales, requireUser, saleFilterSlugs } from "@/server/queries";
+import { cashIsOpen, listCategories, listPaymentMethods, listProducts, recentSales, requireUser } from "@/server/queries";
 
 export default async function SalesPage() {
-  const [, products, sales, categories, filterSlugs, cashOpen, methods] = await Promise.all([
+  const [, products, sales, categories, cashOpen, methods] = await Promise.all([
     requireUser(),
     listProducts(),
     recentSales(8),
     listCategories(),
-    saleFilterSlugs(),
     cashIsOpen(),
     listPaymentMethods("recebimento"),
   ]);
@@ -20,7 +19,7 @@ export default async function SalesPage() {
         title="Registrar venda"
         description="Toque nos produtos e divida o pagamento se precisar. A venda fica no nome de quem está logado. Duas pessoas podem vender ao mesmo tempo, com o caixa aberto."
       />
-      <SaleDesk products={products} categories={categories} filterSlugs={filterSlugs} cashOpen={cashOpen} methods={methods.filter((method) => method.active !== false)} />
+      <SaleDesk products={products} categories={categories.filter((category) => category.active)} cashOpen={cashOpen} methods={methods.filter((method) => method.active !== false)} />
       <section className="space-y-3">
         <h2 className="font-heading text-2xl">Vendas recentes</h2>
         <RecentSales sales={sales as RecentSale[]} methods={methods} />
