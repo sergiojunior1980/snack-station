@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Input, Label, Select } from "@/components/ui/input";
 import { categoryLabel } from "@/lib/catalog";
+import { PRODUCT_ORIGINS, PRODUCT_TAX_CODES } from "@/lib/fiscal-product";
 import { cn } from "@/lib/utils";
 import { formatBRL, parseBRLToCents } from "@/lib/money";
 import { createProduct, deleteProduct, saveCostMode, updateProduct, type ActionState } from "@/server/actions";
@@ -126,6 +127,7 @@ export function ProductManager({
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {formatBRL(product.sale_price_cents)} venda · {formatBRL(product.display_cost_cents ?? 0)} compra · {product.stock_quantity} em estoque
+                    {product.ncm ? ` · NCM ${product.ncm}` : " · sem NCM"}
                   </p>
                   <AttributeLine attributes={product.attributes} />
                   {product.is_combo ? <ComboSummary product={product} products={products} /> : null}
@@ -159,6 +161,10 @@ type ProductLine = {
   minStock: string;
   combo: boolean;
   parts: { key: string; productId: string; quantity: string }[];
+  ncm: string;
+  cfop: string;
+  taxCode: string;
+  origin: string;
 };
 
 function blankProduct(key: string): ProductLine {
@@ -172,6 +178,10 @@ function blankProduct(key: string): ProductLine {
     price: "",
     minStock: "5",
     combo: false,
+    ncm: "",
+    cfop: "5102",
+    taxCode: "102",
+    origin: "0",
     parts: [
       { key: `${key}-a`, productId: "", quantity: "1" },
       { key: `${key}-b`, productId: "", quantity: "1" },
@@ -201,6 +211,10 @@ function ProductForm({
     unit: line.unit,
     price: line.price,
     minStock: Number(line.minStock),
+    ncm: line.ncm,
+    cfop: line.cfop,
+    taxCode: line.taxCode,
+    origin: line.origin,
     combo: line.combo,
     parts: line.combo
       ? line.parts
@@ -295,6 +309,24 @@ function ProductForm({
                 </Select>
               </div>
               <Field label="Valor de venda" name={`price-${line.key}`} placeholder="5,00" value={line.price} onChange={(event) => patch(line.key, { price: event.target.value })} />
+              <Field label="NCM" name={`ncm-${line.key}`} placeholder="21069090" value={line.ncm} onChange={(event) => patch(line.key, { ncm: event.target.value })} />
+              <Field label="CFOP" name={`cfop-${line.key}`} value={line.cfop} onChange={(event) => patch(line.key, { cfop: event.target.value })} />
+              <div className="space-y-1">
+                <Label htmlFor={`tax-${line.key}`}>Situação tributária</Label>
+                <Select id={`tax-${line.key}`} value={line.taxCode} onChange={(event) => patch(line.key, { taxCode: event.target.value })}>
+                  {PRODUCT_TAX_CODES.map((item) => (
+                    <option key={item.code} value={item.code}>{item.label}</option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor={`origin-${line.key}`}>Origem</Label>
+                <Select id={`origin-${line.key}`} value={line.origin} onChange={(event) => patch(line.key, { origin: event.target.value })}>
+                  {PRODUCT_ORIGINS.map((item) => (
+                    <option key={item.code} value={item.code}>{item.label}</option>
+                  ))}
+                </Select>
+              </div>
               {line.combo ? null : (
                 <Field
                   label="Avisar quando chegar a"
@@ -435,6 +467,24 @@ function EditProduct({
       </div>
       {combo ? null : <ReadOnlyCost cents={product.display_cost_cents ?? 0} />}
       <Field label="Valor de venda" name="price" defaultValue={(product.sale_price_cents / 100).toFixed(2).replace(".", ",")} />
+      <Field label="NCM" name="ncm" defaultValue={product.ncm ?? ""} placeholder="21069090" />
+      <Field label="CFOP" name="cfop" defaultValue={product.cfop ?? "5102"} />
+      <div className="space-y-1">
+        <Label htmlFor={`tax-${product.id}`}>Situação tributária</Label>
+        <Select id={`tax-${product.id}`} name="taxCode" defaultValue={product.tax_code ?? "102"}>
+          {PRODUCT_TAX_CODES.map((item) => (
+            <option key={item.code} value={item.code}>{item.label}</option>
+          ))}
+        </Select>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={`origin-${product.id}`}>Origem</Label>
+        <Select id={`origin-${product.id}`} name="origin" defaultValue={product.origin ?? "0"}>
+          {PRODUCT_ORIGINS.map((item) => (
+            <option key={item.code} value={item.code}>{item.label}</option>
+          ))}
+        </Select>
+      </div>
       <Field label="Estoque mínimo" name="minStock" type="number" min={0} defaultValue={String(product.min_stock)} />
       <label className="flex items-center gap-3 text-sm sm:col-span-2 lg:col-span-4">
         <input type="checkbox" name="combo" checked={combo} onChange={(event) => setCombo(event.target.checked)} className="mr-3 size-4 shrink-0 accent-[var(--primary)]" />

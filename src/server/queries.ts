@@ -1,8 +1,9 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { defaultAppearance, isHexColor, type Appearance } from "@/lib/brand";
+import { defaultAppearance, defaultLoginBrand, isHexColor, type Appearance, type LoginBrand } from "@/lib/brand";
 import { canUseMenu, defaultSellerMenus, normalizeMenus, normalizeRole, type Role } from "@/lib/roles";
 import { slipRevenue } from "@/lib/cash-revenue";
+import { emptyShopFiscal, type ShopFiscal } from "@/lib/company";
 import type { CashSlip } from "@/lib/cash-slip";
 import type { ReportGrain } from "@/lib/dates";
 
@@ -20,6 +21,10 @@ export type Product = {
   components?: { product_id: string; quantity: number }[];
   display_cost_cents?: number;
   nearest_expires_on?: string | null;
+  ncm?: string | null;
+  cfop?: string;
+  tax_code?: string;
+  origin?: string;
 };
 
 export type CostMode = "media" | "maior";
@@ -81,7 +86,7 @@ export async function appearance(): Promise<Appearance> {
   const { data } = await supabase
     .from("app_settings")
     .select("key, value")
-    .in("key", ["brand_button_color", "brand_background_color", "brand_logo_url"]);
+    .in("key", ["brand_button_color", "brand_background_color", "brand_logo_url", "brand_tagline", "brand_tagline_note"]);
   const values = new Map((data ?? []).map((row) => [row.key, row.value]));
   const buttonColor = values.get("brand_button_color") ?? "";
   const backgroundColor = values.get("brand_background_color") ?? "";
@@ -89,6 +94,26 @@ export async function appearance(): Promise<Appearance> {
     buttonColor: isHexColor(buttonColor) ? buttonColor : defaultAppearance.buttonColor,
     backgroundColor: isHexColor(backgroundColor) ? backgroundColor : defaultAppearance.backgroundColor,
     logoUrl: values.get("brand_logo_url") ?? "",
+    tagline: values.get("brand_tagline")?.trim() || defaultAppearance.tagline,
+    taglineNote: values.get("brand_tagline_note")?.trim() || defaultAppearance.taglineNote,
+  };
+}
+
+export async function loginBrand(shop: string): Promise<LoginBrand> {
+  const supabase = await createClient();
+  if (!supabase) return defaultLoginBrand;
+  const { data } = await supabase.rpc("shop_login_brand", { p_shop: shop });
+  if (!data || typeof data !== "object") return defaultLoginBrand;
+  const row = data as { name?: string; logo_url?: string; tagline?: string; tagline_note?: string; button_color?: string; background_color?: string };
+  const buttonColor = row.button_color ?? "";
+  const backgroundColor = row.background_color ?? "";
+  return {
+    name: row.name?.trim() || defaultLoginBrand.name,
+    logoUrl: row.logo_url ?? "",
+    tagline: row.tagline?.trim() || defaultLoginBrand.tagline,
+    taglineNote: row.tagline_note?.trim() || defaultLoginBrand.taglineNote,
+    buttonColor: isHexColor(buttonColor) ? buttonColor : defaultLoginBrand.buttonColor,
+    backgroundColor: isHexColor(backgroundColor) ? backgroundColor : defaultLoginBrand.backgroundColor,
   };
 }
 
@@ -97,7 +122,7 @@ export async function listProducts() {
   if (!supabase) return [];
   const withCombo = await supabase
     .from("products")
-    .select("id, name, category, attributes, sale_price_cents, cost_price_cents, stock_quantity, min_stock, active, is_combo")
+    .select("id, name, category, attributes, sale_price_cents, cost_price_cents, stock_quantity, min_stock, active, is_combo, ncm, cfop, tax_code, origin")
     .order("name");
   const data = withCombo.error
     ? (
@@ -160,7 +185,14 @@ export async function costMode(): Promise<CostMode> {
   return data?.value === "maior" ? "maior" : "media";
 }
 
-export type PayMethod = { id: string; name: string; counts_as_cash: boolean; settles_balance: boolean; active?: boolean };
+export type PayMethod = {
+  id: string;
+  name: string;
+  counts_as_cash: boolean;
+  settles_balance: boolean;
+  active?: boolean;
+  fiscal_code?: string | null;
+};
 
 const fallbackReceipts: PayMethod[] = [
   { id: "dinheiro", name: "Dinheiro", counts_as_cash: true, settles_balance: false },
@@ -178,7 +210,7 @@ const loadPaymentMethods = cache(async () => {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("payment_methods")
-    .select("id, name, kind, counts_as_cash, settles_balance, active, sort_order")
+    .select("id, name, kind, counts_as_cash, settles_balance, active, sort_order, fiscal_code")
     .order("sort_order");
   if (error || !data?.length) return null;
   return data as (PayMethod & { kind: string; active: boolean; sort_order: number })[];
@@ -192,7 +224,7 @@ export async function listPaymentMethods(kind: "recebimento" | "pagamento") {
   return rows.length ? rows : fallback;
 }
 
-const tapeModules = ["caixa_vendas", "compras_estoque", "cadastro_produtos", "perfis"] as const;
+const tapeModules = ["caixa_vendas", "compras_estoque", "cadastro_produtos", "perfis", "empresa"] as const;
 export type TapeModule = (typeof tapeModules)[number];
 
 export const tapeModuleLabel: Record<TapeModule, string> = {
@@ -200,7 +232,37 @@ export const tapeModuleLabel: Record<TapeModule, string> = {
   compras_estoque: "Compras e estoque",
   cadastro_produtos: "Cadastro de produtos",
   perfis: "Equipe",
+  empresa: "Empresa",
 };
+
+export async function shopFiscal(): Promise<ShopFiscal | null> {
+  const { supabase, role } = await requireUser();
+  if (!supabase || role !== "admin") return null;
+  const { data } = await supabase.from("shop_fiscal_form").select("*").maybeSingle();
+  if (!data) return null;
+  return {
+    ...emptyShopFiscal,
+    legalName: data.legal_name ?? "",
+    tradeName: data.trade_name ?? "",
+    cnpj: data.cnpj ?? "",
+    stateRegistration: data.state_registration ?? "",
+    street: data.street ?? "",
+    number: data.number ?? "",
+    complement: data.complement ?? "",
+    district: data.district ?? "",
+    cityName: data.city_name ?? "",
+    cityCode: data.city_code ?? "",
+    state: data.state ?? "SP",
+    zip: data.zip ?? "",
+    crt: Number(data.crt) || 1,
+    nfceSeries: Number(data.nfce_series) || 1,
+    nfceNextNumber: Number(data.nfce_next_number) || 1,
+    environment: data.environment === "producao" ? "producao" : "homologacao",
+    cscId: data.csc_id ?? "",
+    cscConfigured: Boolean(data.csc_configured),
+    certificateConfigured: Boolean(data.certificate_configured),
+  };
+}
 
 export async function listAudit(module?: string) {
   const { supabase, role, menus } = await requireUser();

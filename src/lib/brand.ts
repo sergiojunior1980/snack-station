@@ -1,7 +1,30 @@
+export const defaultTagline = "O lanche sai. O estoque acompanha.";
+export const defaultTaglineNote = "Refrigerante, doce, biscoito e água — cada venda baixa o estoque e cada compra repõe, com o faturamento do dia na mão.";
+
 export const defaultAppearance = {
   buttonColor: "#b8002e",
   backgroundColor: "#fff7f7",
   logoUrl: "",
+  tagline: defaultTagline,
+  taglineNote: defaultTaglineNote,
+};
+
+export type LoginBrand = {
+  name: string;
+  logoUrl: string;
+  tagline: string;
+  taglineNote: string;
+  buttonColor: string;
+  backgroundColor: string;
+};
+
+export const defaultLoginBrand: LoginBrand = {
+  name: "FISK",
+  logoUrl: "",
+  tagline: defaultTagline,
+  taglineNote: defaultTaglineNote,
+  buttonColor: defaultAppearance.buttonColor,
+  backgroundColor: defaultAppearance.backgroundColor,
 };
 
 export type Appearance = typeof defaultAppearance;

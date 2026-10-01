@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart3, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Package, Settings, ShoppingBag, Store, Users, Wallet, Warehouse } from "lucide-react";
+import { BarChart3, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Package, Receipt, Settings, ShoppingBag, Store, Users, Wallet, Warehouse } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { financeReports } from "@/lib/report-nav";
 import { canUseMenu, roleLabel, type MenuId, type Role } from "@/lib/roles";
@@ -68,6 +68,16 @@ const nav: NavItem[] = [
     ],
   },
   { href: "/configuracoes", label: "Configurações", icon: Settings, menu: "configuracoes", children: [] },
+  {
+    href: "/empresa",
+    label: "Fiscal",
+    icon: Receipt,
+    children: [
+      { href: "/empresa", label: "Empresa" },
+      { href: "/fiscal/vendas", label: "XML das vendas" },
+      { href: "/fiscal/compras", label: "Nota de compra" },
+    ],
+  },
   { href: "/auditoria", label: "Auditoria", icon: ClipboardList, menu: "auditoria", children: [] },
   { href: "/equipe", label: "Equipe", icon: Users, children: [] },
 ];

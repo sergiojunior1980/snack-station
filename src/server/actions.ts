@@ -9,6 +9,9 @@ import { normalizeShop, normalizeUsername, shopLoginEmail } from "@/lib/username
 import { parseBRLToCents } from "@/lib/money";
 import { defaultAppearance, isHexColor } from "@/lib/brand";
 import { LOGO_MAX_BYTES, LOGO_SIZE_ERROR, LOGO_TYPE_ERROR, logoKind } from "@/lib/logo-file";
+import { CERT_MAX_BYTES, CERT_SIZE_ERROR, CERT_TYPE_ERROR, certificateAccepted, companyError, onlyDigits, type CompanyInput } from "@/lib/company";
+import { isOfficialPaymentCode } from "@/lib/fiscal-payment";
+import { cleanNcm, productFiscalError } from "@/lib/fiscal-product";
 import { supabaseEnv } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import type { CashSlip } from "@/lib/cash-slip";
@@ -194,6 +197,10 @@ type ProductDraft = {
   minStock: number;
   combo: boolean;
   parts: { product_id: string; quantity: number }[];
+  ncm: string;
+  cfop: string;
+  taxCode: string;
+  origin: string;
 };
 
 function draftItems(formData: FormData): ProductDraft[] | { error: string } {
@@ -219,6 +226,10 @@ function draftItems(formData: FormData): ProductDraft[] | { error: string } {
         minStock: formData.get("minStock"),
         combo: formData.get("combo") === "on",
         parts: formData.get("parts"),
+        ncm: formData.get("ncm"),
+        cfop: formData.get("cfop"),
+        taxCode: formData.get("taxCode"),
+        origin: formData.get("origin"),
       },
     ];
   }
@@ -269,6 +280,14 @@ function draftItems(formData: FormData): ProductDraft[] | { error: string } {
         return { error: `${label}: o combo precisa de dois ou mais produtos diferentes.` };
       }
     }
+    const fiscal = {
+      ncm: cleanNcm(String(item.ncm ?? "")),
+      cfop: String(item.cfop ?? "5102").trim() || "5102",
+      taxCode: String(item.taxCode ?? "102").trim() || "102",
+      origin: String(item.origin ?? "0").trim() || "0",
+    };
+    const fiscalMessage = productFiscalError(fiscal);
+    if (fiscalMessage) return { error: `${label}: ${fiscalMessage}` };
     items.push({
       name,
       brand,
@@ -279,6 +298,7 @@ function draftItems(formData: FormData): ProductDraft[] | { error: string } {
       minStock: combo ? 0 : minStock,
       combo,
       parts,
+      ...fiscal,
     });
   }
   return items;
@@ -326,6 +346,10 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
       min_stock: item.minStock,
       is_combo: item.combo,
       active: true,
+      ncm: item.ncm || null,
+      cfop: item.cfop,
+      tax_code: item.taxCode,
+      origin: item.origin,
     }).select("id").single();
     if (error || !created) {
       const reason = error ? message(error) : "Não foi possível cadastrar.";
@@ -367,6 +391,14 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   const supabase = await db();
   const details = await readAttributes(supabase, parsed.data.category, formData);
   if ("error" in details && details.error) return { error: details.error };
+  const fiscal = {
+    ncm: cleanNcm(String(formData.get("ncm") ?? "")),
+    cfop: String(formData.get("cfop") ?? "5102").trim() || "5102",
+    taxCode: String(formData.get("taxCode") ?? "102").trim() || "102",
+    origin: String(formData.get("origin") ?? "0").trim() || "0",
+  };
+  const fiscalMessage = productFiscalError(fiscal);
+  if (fiscalMessage) return { error: fiscalMessage };
   const { error } = await supabase
     .from("products")
     .update({
@@ -378,6 +410,10 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
       min_stock: combo ? 0 : parsed.data.minStock,
       active: formData.get("active") === "on",
       is_combo: combo,
+      ncm: fiscal.ncm || null,
+      cfop: fiscal.cfop,
+      tax_code: fiscal.taxCode,
+      origin: fiscal.origin,
     })
     .eq("id", id);
   if (error) return { error: message(error) };
@@ -452,6 +488,10 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
   const buttonColor = String(formData.get("buttonColor") ?? "");
   const backgroundColor = String(formData.get("backgroundColor") ?? "");
   if (!isHexColor(buttonColor) || !isHexColor(backgroundColor)) return { error: "Escolha uma cor válida." };
+  const tagline = String(formData.get("tagline") ?? "").trim();
+  const taglineNote = String(formData.get("taglineNote") ?? "").trim();
+  if (tagline.length < 8 || tagline.length > 90) return { error: "A frase da entrada precisa ter de 8 a 90 caracteres." };
+  if (taglineNote.length < 8 || taglineNote.length > 220) return { error: "O texto abaixo da frase precisa ter de 8 a 220 caracteres." };
 
   let logoUrl = "";
   const { data: current } = await supabase.from("app_settings").select("value").eq("key", "brand_logo_url").maybeSingle();
@@ -478,9 +518,12 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
     { tenant_id: tenantId, key: "brand_button_color", value: buttonColor || defaultAppearance.buttonColor },
     { tenant_id: tenantId, key: "brand_background_color", value: backgroundColor || defaultAppearance.backgroundColor },
     { tenant_id: tenantId, key: "brand_logo_url", value: logoUrl },
+    { tenant_id: tenantId, key: "brand_tagline", value: tagline },
+    { tenant_id: tenantId, key: "brand_tagline_note", value: taglineNote },
   ], { onConflict: "tenant_id,key" });
   if (error) return { error: message(error) };
   revalidatePath("/", "layout");
+  revalidatePath("/login");
   return { ok: "Aparência atualizada." };
 }
 
@@ -963,6 +1006,9 @@ export async function savePaymentMethod(_prev: ActionState, formData: FormData):
   const id = slugify(String(formData.get("id") ?? name));
   if (kind !== "recebimento" && kind !== "pagamento") return { error: "Escolha recebimento ou pagamento." };
   if (name.length < 2 || !id) return { error: "Informe o nome da forma." };
+  const fiscalCode = String(formData.get("fiscalCode") ?? "").trim();
+  if (kind === "recebimento" && !isOfficialPaymentCode(fiscalCode)) return { error: "Escolha o código oficial da forma." };
+  if (fiscalCode && !isOfficialPaymentCode(fiscalCode)) return { error: "Escolha o código oficial da forma." };
   const supabase = await db();
   const { data: auth } = await supabase.auth.getUser();
   const { data: profile } = auth.user
@@ -978,13 +1024,101 @@ export async function savePaymentMethod(_prev: ActionState, formData: FormData):
       counts_as_cash: kind === "recebimento" && formData.get("counts_as_cash") === "on",
       settles_balance: kind === "pagamento" && formData.get("settles_balance") === "on",
       active: formData.get("active") !== "off",
+      fiscal_code: fiscalCode || null,
     },
     { onConflict: "tenant_id,kind,id" },
   );
   if (error) return { error: message(error) };
-  await supabase.rpc("append_tape", { p_module: "caixa_vendas", p_summary: `Forma de ${kind} salva: ${name}` });
+  await supabase.rpc("append_tape", {
+    p_module: "caixa_vendas",
+    p_summary: fiscalCode ? `Forma de ${kind} salva: ${name} · código ${fiscalCode}` : `Forma de ${kind} salva: ${name}`,
+  });
   revalidatePath("/financeiro/formas");
   revalidatePath("/vendas");
   revalidatePath("/compras");
   return { ok: "Forma salva." };
+}
+
+export async function saveShopFiscal(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const supabase = await db();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return { error: "Entre para salvar a empresa." };
+  const { data: profile } = await supabase.from("profiles").select("role, tenant_id").eq("id", auth.user.id).maybeSingle();
+  if (normalizeRole(profile?.role) !== "admin" || !profile?.tenant_id) return { error: "Só o administrador cadastra a empresa." };
+
+  const input: CompanyInput = {
+    legalName: String(formData.get("legalName") ?? ""),
+    tradeName: String(formData.get("tradeName") ?? ""),
+    cnpj: onlyDigits(String(formData.get("cnpj") ?? "")),
+    stateRegistration: String(formData.get("stateRegistration") ?? ""),
+    street: String(formData.get("street") ?? ""),
+    number: String(formData.get("number") ?? ""),
+    complement: String(formData.get("complement") ?? ""),
+    district: String(formData.get("district") ?? ""),
+    cityName: String(formData.get("cityName") ?? ""),
+    cityCode: onlyDigits(String(formData.get("cityCode") ?? "")),
+    state: String(formData.get("state") ?? "").trim().toUpperCase(),
+    zip: onlyDigits(String(formData.get("zip") ?? "")),
+    crt: Number(formData.get("crt")),
+    nfceSeries: Number(formData.get("nfceSeries")),
+    nfceNextNumber: Number(formData.get("nfceNextNumber")),
+    environment: String(formData.get("environment") ?? ""),
+    cscId: onlyDigits(String(formData.get("cscId") ?? "")),
+    cscToken: String(formData.get("cscToken") ?? "").trim(),
+    certificatePassword: String(formData.get("certificatePassword") ?? ""),
+  };
+
+  const { data: current } = await supabase.from("shop_fiscal_form").select("csc_configured, certificate_configured").maybeSingle();
+  const file = formData.get("certificate");
+  const hasFile = file instanceof File && file.size > 0;
+  const invalid = companyError(input, {
+    cscConfigured: Boolean(current?.csc_configured),
+    certificateConfigured: Boolean(current?.certificate_configured),
+  }, hasFile);
+  if (invalid) return { error: invalid };
+
+  let certificatePath = "";
+  if (hasFile && file instanceof File) {
+    if (file.size > CERT_MAX_BYTES) return { error: CERT_SIZE_ERROR };
+    const kind = certificateAccepted(file.name, new Uint8Array(await file.slice(0, 4).arrayBuffer()));
+    if (!kind) return { error: CERT_TYPE_ERROR };
+    certificatePath = `${profile.tenant_id}/a1.pfx`;
+    const { error: uploadError } = await supabase.storage.from("certificados").upload(certificatePath, file, {
+      contentType: "application/x-pkcs12",
+      upsert: true,
+    });
+    if (uploadError) return { error: message(uploadError) };
+  }
+
+  const { error } = await supabase.rpc("save_shop_fiscal", {
+    p_legal_name: input.legalName,
+    p_trade_name: input.tradeName,
+    p_cnpj: input.cnpj,
+    p_state_registration: input.stateRegistration,
+    p_street: input.street,
+    p_number: input.number,
+    p_complement: input.complement,
+    p_district: input.district,
+    p_city_name: input.cityName,
+    p_city_code: input.cityCode,
+    p_state: input.state,
+    p_zip: input.zip,
+    p_crt: input.crt,
+    p_nfce_series: input.nfceSeries,
+    p_nfce_next_number: input.nfceNextNumber,
+    p_environment: input.environment,
+    p_csc_id: input.cscId,
+    p_csc_token: input.cscToken,
+    p_certificate_path: certificatePath,
+    p_certificate_password: input.certificatePassword,
+  });
+  if (error) {
+    if (certificatePath && !current?.certificate_configured) {
+      await supabase.storage.from("certificados").remove([certificatePath]);
+    }
+    return { error: message(error) };
+  }
+  revalidatePath("/empresa");
+  revalidatePath("/auditoria");
+  return { ok: "Empresa salva." };
 }

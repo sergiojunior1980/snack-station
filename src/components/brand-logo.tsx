@@ -8,18 +8,21 @@ export function BrandLogo({
   className,
   inverted = false,
   href = "/",
+  logoUrl,
 }: {
   className?: string;
   inverted?: boolean;
   href?: string;
+  logoUrl?: string;
 }) {
-  const { logoUrl } = useAppearance();
+  const appearance = useAppearance();
+  const url = logoUrl === undefined ? appearance.logoUrl : logoUrl;
 
   return (
     <Link href={href} className={cn("flex items-center gap-2.5", className)}>
-      {logoUrl ? (
+      {url ? (
         <img
-          src={logoUrl}
+          src={url}
           alt="Logo"
           className={cn("h-9 max-w-[8.5rem] object-contain", inverted && "rounded-md bg-white px-2 py-1")}
         />

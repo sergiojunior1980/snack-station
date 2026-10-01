@@ -205,7 +205,7 @@ export default async function FinancePage({
             <PageHero
               eyebrow="Financeiro"
               title="Formas de recebimento e pagamento"
-              description="Recebimento aparece na venda. Pagamento aparece na compra. Marque o que entra no caixa ou abate o saldo."
+              description="Recebimento aparece na venda e leva o código oficial da nota. Pagamento aparece na compra."
             />
             <PaymentMethodManager receipts={receipts} payments={payments} />
           </>
