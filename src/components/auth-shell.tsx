@@ -41,8 +41,7 @@ export function AuthShell({
         />
         <BrandLogo inverted className="relative" href="/login" logoUrl={brand.logoUrl} />
         <div className="relative mt-auto max-w-lg pb-8">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary-foreground/80">{brand.name}</p>
-          <h1 className="font-heading mt-4 text-5xl leading-[1.08] tracking-tight">{brand.tagline}</h1>
+          <h1 className="font-heading text-5xl leading-[1.08] tracking-tight">{brand.tagline}</h1>
           <p className="mt-5 text-lg leading-relaxed text-primary-foreground/75">{brand.taglineNote}</p>
         </div>
       </aside>

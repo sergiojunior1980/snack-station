@@ -20,7 +20,7 @@ function isReload() {
 
 function settle() {
   if (decided) return;
-  if (isReload()) markSessionOpen();
+  if (isReload()) clearSessionMark();
   decided = true;
   notify();
 }
