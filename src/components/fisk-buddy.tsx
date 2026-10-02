@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const HEIGHT = 315;
+const HEIGHT = 331;
 const WIDTH = 196;
 const CHEER_MS = 2400;
 const FRAMES = 4;
-const ORDER = [0, 1, 2, 3, 2, 1];
+const ORDER = [0, 1, 2, 3];
 
 export function celebrateSale() {
   if (typeof window === "undefined") return;
@@ -84,15 +84,15 @@ export function FiskBuddy() {
       const moving = over && !cheeringNow && dist > 16;
 
       if (cheeringNow) {
-        state.phase += 0.28;
+        state.phase += 0.22;
       } else if (moving) {
         const speed = 3.2;
         state.x += (dx / dist) * speed;
         state.y += (dy / dist) * speed;
         if (Math.abs(dx) > 8) state.dir = dx > 0 ? 1 : -1;
-        state.phase += 0.16;
+        state.phase += 0.11;
       } else {
-        state.phase += 0.045;
+        state.phase += 0.04;
       }
       state.x = Math.min(maxX, Math.max(8, state.x));
       state.y = Math.min(maxY, Math.max(8, state.y));
@@ -105,8 +105,9 @@ export function FiskBuddy() {
         lift = 8 + hop * 48;
         tilt = Math.sin(elapsed / 120) * 10;
       } else if (moving) {
-        lift = 6 + Math.abs(Math.sin(state.phase)) * 10;
-        tilt = state.dir * 3;
+        const step = state.phase % FRAMES;
+        lift = Math.abs(Math.sin(step * Math.PI)) * 8;
+        tilt = state.dir * 2;
       } else {
         lift = Math.sin(frame / 24) * 3;
         tilt = Math.sin(frame / 30) * 2;
