@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const HEIGHT = 331;
-const WIDTH = 196;
-const CHEER_MS = 2400;
+const HEIGHT = 270;
+const WIDTH = 160;
+const CHEER_MS = 2800;
 const FRAMES = 4;
 const ORDER = [0, 1, 2, 3];
+const STAND = 3;
+const FIRE_COLORS = ["#ffe14a", "#ff4b4b", "#fff7f7", "#7ec8ff", "#ff8ad4"];
 
 export function celebrateSale() {
   if (typeof window === "undefined") return;
@@ -18,16 +20,19 @@ export function FiskBuddy() {
   const figure = useRef<HTMLDivElement>(null);
   const shadow = useRef<HTMLSpanElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const fire = useRef<HTMLCanvasElement>(null);
   const motion = useRef({
     x: 24,
     y: 0,
     dir: 1,
     placed: false,
     celebrateUntil: 0,
+    bursts: 0,
     mouseX: 0,
     mouseY: 0,
     seen: false,
     phase: 0,
+    sparks: [] as Spark[],
   });
   const [cheering, setCheering] = useState(false);
 
@@ -36,9 +41,17 @@ export function FiskBuddy() {
     const body = figure.current;
     const shade = shadow.current;
     const surface = canvas.current;
-    if (!node || !body || !shade || !surface) return;
+    const sky = fire.current;
+    if (!node || !body || !shade || !surface || !sky) return;
     const ctx = surface.getContext("2d");
-    if (!ctx) return;
+    const fireCtx = sky.getContext("2d");
+    if (!ctx || !fireCtx) return;
+    const fireW = 280;
+    const fireH = 200;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    sky.width = fireW * dpr;
+    sky.height = fireH * dpr;
+    fireCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const picture = new Image();
     picture.src = "/buddy-frames.png";
@@ -47,6 +60,8 @@ export function FiskBuddy() {
     let cheerTimer = 0;
     const onSale = () => {
       state.celebrateUntil = performance.now() + CHEER_MS;
+      state.bursts = 0;
+      state.sparks = [];
       setCheering(true);
       window.clearTimeout(cheerTimer);
       cheerTimer = window.setTimeout(() => setCheering(false), CHEER_MS);
@@ -63,10 +78,8 @@ export function FiskBuddy() {
     window.addEventListener("pointermove", onPointer);
     window.addEventListener("pointerout", onPointerOut);
 
-    let frame = 0;
     let raf = 0;
     const tick = () => {
-      frame += 1;
       const maxX = Math.max(8, window.innerWidth - WIDTH - 8);
       const maxY = Math.max(8, window.innerHeight - HEIGHT - 8);
       if (!state.placed) {
@@ -83,16 +96,12 @@ export function FiskBuddy() {
       const dist = Math.hypot(dx, dy);
       const moving = over && !cheeringNow && dist > 16;
 
-      if (cheeringNow) {
-        state.phase += 0.22;
-      } else if (moving) {
+      if (moving) {
         const speed = 3.2;
         state.x += (dx / dist) * speed;
         state.y += (dy / dist) * speed;
         if (Math.abs(dx) > 8) state.dir = dx > 0 ? 1 : -1;
         state.phase += 0.11;
-      } else {
-        state.phase += 0.04;
       }
       state.x = Math.min(maxX, Math.max(8, state.x));
       state.y = Math.min(maxY, Math.max(8, state.y));
@@ -102,16 +111,33 @@ export function FiskBuddy() {
       if (cheeringNow) {
         const elapsed = CHEER_MS - (state.celebrateUntil - performance.now());
         const hop = Math.sin(((elapsed % 420) / 420) * Math.PI);
-        lift = 8 + hop * 48;
-        tilt = Math.sin(elapsed / 120) * 10;
+        lift = 6 + hop * 28;
+        const want = elapsed < 180 ? 1 : elapsed < 700 ? 2 : 3;
+        while (state.bursts < want) {
+          burst(state.sparks, fireW / 2 + (state.bursts - 1) * 28, fireH - 36);
+          state.bursts += 1;
+        }
       } else if (moving) {
         const step = state.phase % FRAMES;
         lift = Math.abs(Math.sin(step * Math.PI)) * 8;
         tilt = state.dir * 2;
-      } else {
-        lift = Math.sin(frame / 24) * 3;
-        tilt = Math.sin(frame / 30) * 2;
       }
+      for (const spark of state.sparks) {
+        spark.x += spark.vx;
+        spark.y += spark.vy;
+        spark.vy += 0.07;
+        spark.life -= spark.decay;
+      }
+      state.sparks = state.sparks.filter((spark) => spark.life > 0);
+      fireCtx.clearRect(0, 0, fireW, fireH);
+      for (const spark of state.sparks) {
+        fireCtx.globalAlpha = Math.max(0, spark.life);
+        fireCtx.fillStyle = spark.color;
+        fireCtx.beginPath();
+        fireCtx.arc(spark.x, spark.y, spark.size, 0, Math.PI * 2);
+        fireCtx.fill();
+      }
+      fireCtx.globalAlpha = 1;
 
       if (picture.naturalWidth) {
         const cellW = picture.naturalWidth / FRAMES;
@@ -123,7 +149,7 @@ export function FiskBuddy() {
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
           sized = true;
         }
-        const index = ORDER[Math.floor(state.phase) % ORDER.length];
+        const index = moving ? ORDER[Math.floor(state.phase) % ORDER.length] : STAND;
         ctx.clearRect(0, 0, cellW, cellH);
         ctx.drawImage(picture, index * cellW, 0, cellW, cellH, 0, 0, cellW, cellH);
       }
@@ -154,11 +180,31 @@ export function FiskBuddy() {
         </span>
       ) : null}
       <span ref={shadow} className="absolute bottom-1 left-1/2 h-3 w-16 rounded-full bg-black/70" />
+      <canvas ref={fire} className="pointer-events-none absolute top-0 left-1/2 h-48 w-72 -translate-x-1/2 -translate-y-24" />
       <div ref={figure} className="relative h-full w-full origin-bottom">
         <canvas ref={canvas} className="h-full w-full" />
       </div>
     </div>
   );
+}
+
+type Spark = { x: number; y: number; vx: number; vy: number; life: number; decay: number; color: string; size: number };
+
+function burst(sparks: Spark[], x: number, y: number) {
+  for (let i = 0; i < 26; i += 1) {
+    const angle = (Math.PI * 2 * i) / 26 + Math.random() * 0.2;
+    const speed = 1.4 + Math.random() * 2.8;
+    sparks.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2.2,
+      life: 1,
+      decay: 0.012 + Math.random() * 0.012,
+      color: FIRE_COLORS[i % FIRE_COLORS.length],
+      size: 1.6 + Math.random() * 2.2,
+    });
+  }
 }
 
 function pointerOnBuddy(rect: DOMRect, x: number, y: number) {
