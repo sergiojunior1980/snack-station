@@ -10,14 +10,17 @@ export default async function ProductsPage() {
     listCategories(),
     costMode(),
   ]);
-  const links = [{ href: "/produtos", label: "Cadastro" }];
+  const links = [
+    { href: "/produtos", label: "Cadastro" },
+    { href: "/produtos/combos", label: "Combos" },
+  ];
   if (role === "admin") links.push({ href: "/categorias", label: "Categorias" });
   return (
     <div className="space-y-4">
       <PageHero
         eyebrow="Catálogo"
         title="Produtos e estoque"
-        description="O valor de compra vem do estoque vigente. Combo é um produto novo feito de dois ou mais já cadastrados."
+        description="O valor de compra vem do estoque vigente. O combo, feito de dois ou mais produtos, fica no cadastro de combos."
       />
       <ModuleNav items={links} />
       <ProductManager products={products} categories={categories} costMode={mode} admin={role === "admin"} />

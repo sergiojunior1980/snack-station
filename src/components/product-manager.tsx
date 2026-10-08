@@ -13,7 +13,7 @@ import { createProduct, deleteProduct, saveCostMode, updateProduct, type ActionS
 import type { Category, CostMode, Product } from "@/server/queries";
 
 export function ProductManager({
-  products,
+  products: catalog,
   categories,
   costMode,
   admin,
@@ -23,6 +23,7 @@ export function ProductManager({
   costMode: CostMode;
   admin: boolean;
 }) {
+  const products = catalog.filter((product) => !product.is_combo);
   const [editing, setEditing] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("nome");
@@ -71,7 +72,7 @@ export function ProductManager({
   return (
     <div className="space-y-3">
       {admin ? <CostModeForm mode={costMode} /> : null}
-      <ProductForm categories={categories} products={products} costMode={costMode} />
+      <ProductForm categories={categories} costMode={costMode} />
       <div className="space-y-2 rounded-xl border bg-card p-3">
         <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar produto ou fabricante" />
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -121,7 +122,6 @@ export function ProductManager({
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-medium">{product.name}</h2>
                     <Badge>{categoryName(categories, product.category)}</Badge>
-                    {product.is_combo ? <Badge tone="watch">Combo</Badge> : null}
                     {!product.active ? <Badge tone="muted">Inativo</Badge> : null}
                     {product.stock_quantity <= product.min_stock ? <Badge tone="watch">Estoque baixo</Badge> : null}
                   </div>
@@ -130,7 +130,6 @@ export function ProductManager({
                     {product.ncm ? ` · NCM ${product.ncm}` : " · sem NCM"}
                   </p>
                   <AttributeLine attributes={product.attributes} />
-                  {product.is_combo ? <ComboSummary product={product} products={products} /> : null}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={() => setEditing(editing === product.id ? null : product.id)}>
@@ -140,7 +139,7 @@ export function ProductManager({
                 </div>
               </div>
               {editing === product.id ? (
-                <EditProduct product={product} categories={categories} products={products} onSaved={() => setEditing(null)} />
+                <EditProduct product={product} categories={categories} onSaved={() => setEditing(null)} />
               ) : null}
             </article>
           ))
@@ -159,8 +158,6 @@ type ProductLine = {
   unit: "ml" | "g";
   price: string;
   minStock: string;
-  combo: boolean;
-  parts: { key: string; productId: string; quantity: string }[];
   ncm: string;
   cfop: string;
   taxCode: string;
@@ -177,32 +174,24 @@ function blankProduct(key: string): ProductLine {
     unit: "ml",
     price: "",
     minStock: "5",
-    combo: false,
     ncm: "",
     cfop: "5102",
     taxCode: "102",
     origin: "0",
-    parts: [
-      { key: `${key}-a`, productId: "", quantity: "1" },
-      { key: `${key}-b`, productId: "", quantity: "1" },
-    ],
   };
 }
 
 function ProductForm({
   categories,
-  products,
   costMode,
 }: {
   categories: Category[];
-  products: Product[];
   costMode: CostMode;
 }) {
   const [state, action, pending] = useActionState(createProduct, null as ActionState);
   const [lines, setLines] = useState<ProductLine[]>([blankProduct("1")]);
   const [notice, setNotice] = useState("");
   const [seen, setSeen] = useState(state);
-  const simples = products.filter((item) => !item.is_combo);
   const items = lines.map((line) => ({
     name: line.name,
     brand: line.brand,
@@ -215,12 +204,6 @@ function ProductForm({
     cfop: line.cfop,
     taxCode: line.taxCode,
     origin: line.origin,
-    combo: line.combo,
-    parts: line.combo
-      ? line.parts
-          .map((part) => ({ product_id: part.productId, quantity: Number(part.quantity) }))
-          .filter((part) => part.product_id && part.quantity > 0)
-      : [],
   }));
 
   if (state && state !== seen) {
@@ -247,8 +230,6 @@ function ProductForm({
             minStock: line.minStock,
             size: line.size,
             unit: line.unit,
-            combo: line.combo,
-            parts: line.parts.map((part) => ({ product_id: part.productId, quantity: Number(part.quantity) })),
           });
           if (!message) continue;
           event.preventDefault();
@@ -327,45 +308,17 @@ function ProductForm({
                   ))}
                 </Select>
               </div>
-              {line.combo ? null : (
-                <Field
-                  label="Avisar quando chegar a"
-                  name={`min-${line.key}`}
-                  placeholder="5"
-                  type="number"
-                  min={0}
-                  value={line.minStock}
-                  className="sm:col-span-2 xl:col-span-2"
-                  onChange={(event) => patch(line.key, { minStock: event.target.value })}
-                />
-              )}
+              <Field
+                label="Avisar quando chegar a"
+                name={`min-${line.key}`}
+                placeholder="5"
+                type="number"
+                min={0}
+                value={line.minStock}
+                className="sm:col-span-2 xl:col-span-2"
+                onChange={(event) => patch(line.key, { minStock: event.target.value })}
+              />
             </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={line.combo}
-                onChange={(event) =>
-                  patch(line.key, {
-                    combo: event.target.checked,
-                    parts: event.target.checked
-                      ? [
-                          { key: `${line.key}-a`, productId: simples[0]?.id ?? "", quantity: "1" },
-                          { key: `${line.key}-b`, productId: simples[1]?.id ?? "", quantity: "1" },
-                        ]
-                      : line.parts,
-                  })
-                }
-                className="size-4 shrink-0 accent-[var(--primary)]"
-              />
-              Este produto é um combo
-            </label>
-            {line.combo ? (
-              <ComboParts
-                products={simples}
-                value={line.parts}
-                onChange={(parts) => patch(line.key, { parts })}
-              />
-            ) : null}
           </div>
         );
       })}
@@ -393,17 +346,14 @@ function ProductForm({
 function EditProduct({
   product,
   categories,
-  products,
   onSaved,
 }: {
   product: Product;
   categories: Category[];
-  products: Product[];
   onSaved: () => void;
 }) {
   const [state, action, pending] = useActionState(updateProduct, null as ActionState);
   const [category, setCategory] = useState(product.category);
-  const [combo, setCombo] = useState(Boolean(product.is_combo));
   const [clientNotice, setClientNotice] = useState("");
   const [dismissed, setDismissed] = useState<ActionState>(null);
   const saved = useRef<ActionState>(null);
@@ -430,8 +380,6 @@ function EditProduct({
           minStock: String(data.get("minStock") ?? ""),
           size: String(data.get("size") ?? ""),
           unit: String(data.get("size_unit") ?? ""),
-          combo,
-          form: event.currentTarget,
         });
         if (!message) return;
         event.preventDefault();
@@ -465,7 +413,7 @@ function EditProduct({
           <option value="g">gramas</option>
         </Select>
       </div>
-      {combo ? null : <ReadOnlyCost cents={product.display_cost_cents ?? 0} />}
+      <ReadOnlyCost cents={product.display_cost_cents ?? 0} />
       <Field label="Valor de venda" name="price" defaultValue={(product.sale_price_cents / 100).toFixed(2).replace(".", ",")} />
       <Field label="NCM" name="ncm" defaultValue={product.ncm ?? ""} placeholder="21069090" />
       <Field label="CFOP" name="cfop" defaultValue={product.cfop ?? "5102"} />
@@ -487,16 +435,6 @@ function EditProduct({
       </div>
       <Field label="Estoque mínimo" name="minStock" type="number" min={0} defaultValue={String(product.min_stock)} />
       <label className="flex items-center gap-3 text-sm sm:col-span-2 lg:col-span-4">
-        <input type="checkbox" name="combo" checked={combo} onChange={(event) => setCombo(event.target.checked)} className="mr-3 size-4 shrink-0 accent-[var(--primary)]" />
-        Este produto é um combo
-      </label>
-      {combo ? (
-        <ComboParts
-          products={products.filter((item) => !item.is_combo && item.id !== product.id)}
-          initial={product.components}
-        />
-      ) : null}
-      <label className="flex items-center gap-3 text-sm sm:col-span-2 lg:col-span-4">
         <input type="checkbox" name="active" defaultChecked={product.active} className="mr-3 size-4 shrink-0 accent-[var(--primary)]" />
         Produto disponível para venda
       </label>
@@ -508,104 +446,6 @@ function EditProduct({
       </div>
     </form>
   );
-}
-
-function ComboParts({
-  products,
-  initial,
-  name = "parts",
-  value,
-  onChange,
-}: {
-  products: Product[];
-  initial?: { product_id: string; quantity: number }[];
-  name?: string;
-  value?: { key: string; productId: string; quantity: string }[];
-  onChange?: (parts: { key: string; productId: string; quantity: string }[]) => void;
-}) {
-  const [inner, setInner] = useState(
-    initial && initial.length >= 2
-      ? initial.map((part) => ({ key: part.product_id, productId: part.product_id, quantity: String(part.quantity) }))
-      : [
-          { key: "1", productId: products[0]?.id ?? "", quantity: "1" },
-          { key: "2", productId: products[1]?.id ?? "", quantity: "1" },
-        ],
-  );
-  const parts = value ?? inner;
-  function setParts(
-    next:
-      | { key: string; productId: string; quantity: string }[]
-      | ((current: { key: string; productId: string; quantity: string }[]) => { key: string; productId: string; quantity: string }[]),
-  ) {
-    const resolved = typeof next === "function" ? next(parts) : next;
-    if (onChange) onChange(resolved);
-    else setInner(resolved);
-  }
-  const payload = parts
-    .map((part) => ({ product_id: part.productId, quantity: Number(part.quantity) }))
-    .filter((part) => part.product_id && part.quantity > 0);
-  const cost = payload.reduce((sum, part) => {
-    const item = products.find((product) => product.id === part.product_id);
-    return sum + (item?.display_cost_cents ?? 0) * part.quantity;
-  }, 0);
-  if (products.length < 2) {
-    return <p className="text-sm text-destructive sm:col-span-2 lg:col-span-4">Cadastre pelo menos dois produtos simples antes do combo.</p>;
-  }
-
-  return (
-    <div className="space-y-2 sm:col-span-2 lg:col-span-4">
-      {onChange ? null : <input type="hidden" name={name} value={JSON.stringify(payload)} />}
-      <ReadOnlyCost cents={cost} hint="Soma do custo dos produtos que formam o combo." />
-      <p className="text-sm text-muted-foreground">Inclua dois ou mais produtos já cadastrados. Cada um precisa ser diferente.</p>
-      {parts.map((part) => (
-        <div key={part.key} className="flex items-center gap-2">
-          <Select
-            value={part.productId}
-            className="min-w-0 flex-1"
-            onChange={(event) => setParts((current) => current.map((row) => (row.key === part.key ? { ...row, productId: event.target.value } : row)))}
-          >
-            {products.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </Select>
-          <Input
-            type="number"
-            min={1}
-            className="w-24"
-            value={part.quantity}
-            onChange={(event) => setParts((current) => current.map((row) => (row.key === part.key ? { ...row, quantity: event.target.value } : row)))}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={parts.length <= 2}
-            onClick={() => setParts((current) => (current.length <= 2 ? current : current.filter((row) => row.key !== part.key)))}
-          >
-            Excluir
-          </Button>
-        </div>
-      ))}
-      <button
-        type="button"
-        className="text-sm font-medium text-primary"
-        onClick={() => setParts((current) => [...current, { key: crypto.randomUUID(), productId: products[0]?.id ?? "", quantity: "1" }])}
-      >
-        Incluir produto
-      </button>
-    </div>
-  );
-}
-
-function ComboSummary({ product, products }: { product: Product; products: Product[] }) {
-  const names = (product.components ?? []).map((part) => {
-    const item = products.find((row) => row.id === part.product_id);
-    return `${part.quantity}× ${item?.name ?? "produto"}`;
-  });
-  if (names.length === 0) return null;
-  return <p className="mt-1 text-xs text-muted-foreground">{names.join(" · ")}</p>;
 }
 
 function DeleteProduct({ id }: { id: string }) {
@@ -680,34 +520,16 @@ function productIssues(input: {
   minStock: string;
   size: string;
   unit: string;
-  combo: boolean;
-  form?: HTMLFormElement;
-  parts?: { product_id: string; quantity: number }[];
 }) {
   if (input.name.trim().length < 2) return "Dê um nome ao produto.";
   if (input.brand.trim().length < 2) return "Informe a marca.";
   if (!input.category) return "Escolha a categoria.";
   if (parseBRLToCents(input.price) == null) return "Informe o valor de venda. Use 3,50 por exemplo.";
-  if (!input.combo) {
-    const min = Number(input.minStock);
-    if (!Number.isInteger(min) || min < 0) return "O estoque mínimo precisa ser um número inteiro a partir de zero.";
-  }
+  const min = Number(input.minStock);
+  if (!Number.isInteger(min) || min < 0) return "O estoque mínimo precisa ser um número inteiro a partir de zero.";
   const amount = Number(input.size.replace(",", "."));
   if (!input.size.trim() || !Number.isFinite(amount) || amount <= 0) return "Informe o tamanho.";
   if (input.unit !== "ml" && input.unit !== "g") return "Escolha ml ou gramas.";
-  if (input.combo) {
-    let parts = input.parts ?? [];
-    if (!input.parts) {
-      if (!input.form) return "Monte o combo com produtos já cadastrados.";
-      try {
-        parts = JSON.parse(String(new FormData(input.form).get("parts") ?? "[]"));
-      } catch {
-        return "Monte o combo com produtos já cadastrados.";
-      }
-    }
-    const lines = parts.filter((part) => part.product_id && part.quantity > 0);
-    if (new Set(lines.map((part) => part.product_id)).size < 2) return "O combo precisa de dois ou mais produtos diferentes, mesmo sem estoque.";
-  }
   return "";
 }
 

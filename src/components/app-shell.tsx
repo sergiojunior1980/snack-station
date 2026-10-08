@@ -31,7 +31,7 @@ const nav: NavItem[] = [
     icon: Package,
     menu: "produtos",
     children: [
-      { href: "/produtos", label: "Cadastro", children: [{ href: "/categorias", label: "Categorias", admin: true }] },
+      { href: "/produtos", label: "Cadastro", children: [{ href: "/produtos/combos", label: "Combos" }, { href: "/categorias", label: "Categorias", admin: true }] },
     ],
   },
   {

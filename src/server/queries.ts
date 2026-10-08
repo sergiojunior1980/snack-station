@@ -3,6 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { defaultAppearance, defaultLoginBrand, isHexColor, type Appearance, type LoginBrand } from "@/lib/brand";
 import { canUseMenu, defaultSellerMenus, normalizeMenus, normalizeRole, type Role } from "@/lib/roles";
 import { slipRevenue } from "@/lib/cash-revenue";
+import type { CashClosing } from "@/lib/cash-closing";
+import { paymentLabel } from "@/lib/catalog";
+import { formatBRL } from "@/lib/money";
 import { emptyShopFiscal, type ShopFiscal } from "@/lib/company";
 import type { CashSlip } from "@/lib/cash-slip";
 import type { ReportGrain } from "@/lib/dates";
@@ -298,56 +301,293 @@ export async function listAudit(module?: string) {
   }));
 }
 
-export async function cashSessionReport(from: Date, to: Date) {
-  const { supabase, role, menus } = await requireUser();
-  if (!supabase || !canUseMenu(role, menus, "relatorios")) return [];
+type ClosingSession = {
+  id: string;
+  opened_at: string;
+  opening_cents: number;
+  opening_note: string | null;
+  opened_by: string;
+  closed_at: string | null;
+  closed_by: string | null;
+  counted_cents: number | null;
+  expected_cents: number | null;
+  difference_cents: number | null;
+  closing_note: string | null;
+};
+
+type ClosingSale = {
+  id: string;
+  total_cents: number;
+  payment_method: string;
+  seller_name: string | null;
+  created_at: string;
+  sale_items: { product_id: string | null; product_name: string; quantity: number; total_cents: number }[] | null;
+  sale_payments: { payment_method: string; amount_cents: number }[] | null;
+};
+
+type ClosingMovement = {
+  id: string;
+  kind: "entrada" | "retirada";
+  amount_cents: number;
+  note: string;
+  created_at: string;
+  created_by: string | null;
+};
+
+type ClosingPurchase = {
+  id: string;
+  total_cents: number;
+  supplier: string | null;
+  payment_method: string | null;
+  created_at: string;
+  purchase_items: { product_name: string; quantity: number }[] | null;
+};
+
+async function rowsInWindow<T>(
+  load: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+) {
+  const rows: T[] = [];
+  const pageSize = 1000;
+  for (let start = 0; ; start += pageSize) {
+    const { data, error } = await load(start, start + pageSize - 1);
+    if (error || !data?.length) break;
+    rows.push(...data);
+    if (data.length < pageSize) break;
+  }
+  return rows;
+}
+
+function personName(names: Map<string, string>, id: string | null) {
+  if (!id) return "";
+  return names.get(id) || "Usuário não identificado";
+}
+
+function pieceList(parts: { quantity: number; name: string }[]) {
+  if (parts.length === 0) return "Sem itens";
+  return parts.map((part) => `${part.quantity}× ${part.name}`).join(", ");
+}
+
+export async function cashClosingReport(from: Date, to: Date) {
+  const { supabase, role, menus, shopName } = await requireUser();
+  const empty = { shopName: shopName || "Loja", sessions: [] as CashClosing[] };
+  if (!supabase || !canUseMenu(role, menus, "relatorios")) return empty;
   const { data } = await supabase
     .from("cash_sessions")
     .select("id, opened_at, opening_cents, opening_note, opened_by, closed_at, closed_by, counted_cents, expected_cents, difference_cents, closing_note")
     .order("opened_at", { ascending: false })
     .limit(200);
-  const sessions = ((data ?? []) as {
-    id: string;
-    opened_at: string;
-    opening_cents: number;
-    opening_note: string | null;
-    opened_by: string;
-    closed_at: string | null;
-    closed_by: string | null;
-    counted_cents: number | null;
-    expected_cents: number | null;
-    difference_cents: number | null;
-    closing_note: string | null;
-  }[]).filter((session) => {
+  const now = Date.now();
+  const sessions = ((data ?? []) as ClosingSession[]).filter((session) => {
     const opened = new Date(session.opened_at).getTime();
     const closed = session.closed_at ? new Date(session.closed_at).getTime() : null;
     return (opened >= from.getTime() && opened < to.getTime()) || (closed != null && closed >= from.getTime() && closed < to.getTime());
   });
-  const ids = sessions.map((session) => session.id);
-  const people = [...new Set(sessions.flatMap((session) => [session.opened_by, session.closed_by].filter((id): id is string => Boolean(id))))];
-  const [{ data: movements }, { data: profiles }] = await Promise.all([
-    ids.length
-      ? supabase.from("cash_movements").select("session_id, kind, amount_cents").in("session_id", ids)
-      : Promise.resolve({ data: [] as { session_id: string; kind: "entrada" | "retirada"; amount_cents: number }[] }),
-    people.length
-      ? supabase.from("profiles").select("id, full_name").in("id", people)
-      : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
+  if (sessions.length === 0) return empty;
+
+  const windowStart = sessions.reduce((min, session) => Math.min(min, new Date(session.opened_at).getTime()), Number.POSITIVE_INFINITY);
+  const windowEnd = sessions.reduce((max, session) => Math.max(max, session.closed_at ? new Date(session.closed_at).getTime() : now), 0);
+  const startIso = new Date(windowStart).toISOString();
+  const endIso = new Date(windowEnd).toISOString();
+  const ordered = [...sessions].sort((a, b) => new Date(b.opened_at).getTime() - new Date(a.opened_at).getTime());
+  const owner = (at: string) => {
+    const time = new Date(at).getTime();
+    return ordered.find((session) => {
+      const opened = new Date(session.opened_at).getTime();
+      const closed = session.closed_at ? new Date(session.closed_at).getTime() : now;
+      return time >= opened && time < closed;
+    });
+  };
+
+  const [{ data: methods }, sales, movements, purchases] = await Promise.all([
+    supabase.from("payment_methods").select("id, name, kind, counts_as_cash, settles_balance, sort_order"),
+    rowsInWindow<ClosingSale>((start, end) =>
+      supabase
+        .from("sales")
+        .select("id, total_cents, payment_method, seller_name, created_at, sale_items(product_id, product_name, quantity, total_cents), sale_payments(payment_method, amount_cents)")
+        .gte("created_at", startIso)
+        .lt("created_at", endIso)
+        .order("created_at", { ascending: true })
+        .range(start, end),
+    ),
+    rowsInWindow<ClosingMovement>((start, end) =>
+      supabase
+        .from("cash_movements")
+        .select("id, kind, amount_cents, note, created_at, created_by")
+        .gte("created_at", startIso)
+        .lt("created_at", endIso)
+        .order("created_at", { ascending: true })
+        .range(start, end),
+    ),
+    rowsInWindow<ClosingPurchase>((start, end) =>
+      supabase
+        .from("purchases")
+        .select("id, total_cents, supplier, payment_method, created_at, purchase_items(product_name, quantity)")
+        .gte("created_at", startIso)
+        .lt("created_at", endIso)
+        .order("created_at", { ascending: true })
+        .range(start, end),
+    ),
   ]);
-  const names = new Map((profiles ?? []).map((profile) => [profile.id, profile.full_name]));
-  const flow = new Map<string, { inCents: number; outCents: number }>();
-  for (const movement of movements ?? []) {
-    const row = flow.get(movement.session_id) ?? { inCents: 0, outCents: 0 };
-    if (movement.kind === "entrada") row.inCents += movement.amount_cents;
-    else row.outCents += movement.amount_cents;
-    flow.set(movement.session_id, row);
+
+  const methodRows = (methods ?? []) as {
+    id: string;
+    name: string;
+    kind: string;
+    counts_as_cash: boolean;
+    settles_balance: boolean;
+    sort_order: number;
+  }[];
+  const methodName = new Map<string, string>();
+  for (const method of methodRows) {
+    if (!methodName.has(method.id)) methodName.set(method.id, method.name);
   }
-  return sessions.map((session) => ({
-    ...session,
-    openedBy: names.get(session.opened_by) || "Usuário não identificado",
-    closedBy: session.closed_by ? names.get(session.closed_by) || "Usuário não identificado" : "",
-    inCents: flow.get(session.id)?.inCents ?? 0,
-    outCents: flow.get(session.id)?.outCents ?? 0,
-  }));
+  const labelOf = (id: string) => methodName.get(id) || paymentLabel(id);
+  const cashIds = new Set(methodRows.filter((method) => method.kind === "recebimento" && method.counts_as_cash).map((method) => method.id));
+  const drawerIds = new Set(methodRows.filter((method) => method.kind === "pagamento" && method.settles_balance).map((method) => method.id));
+  const receiptMethods = methodRows
+    .filter((method) => method.kind === "recebimento")
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "pt"));
+
+  const people = [
+    ...new Set(
+      [
+        ...sessions.flatMap((session) => [session.opened_by, session.closed_by]),
+        ...movements.map((movement) => movement.created_by),
+      ].filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const { data: profiles } = people.length
+    ? await supabase.from("profiles").select("id, full_name").in("id", people)
+    : { data: [] as { id: string; full_name: string }[] };
+  const names = new Map((profiles ?? []).map((profile) => [profile.id, profile.full_name]));
+
+  const buckets = new Map(sessions.map((session) => [session.id, {
+    sales: [] as ClosingSale[],
+    movements: [] as ClosingMovement[],
+    purchases: [] as ClosingPurchase[],
+  }]));
+  for (const sale of sales) {
+    const session = owner(sale.created_at);
+    if (session) buckets.get(session.id)?.sales.push(sale);
+  }
+  for (const movement of movements) {
+    const session = owner(movement.created_at);
+    if (session) buckets.get(session.id)?.movements.push(movement);
+  }
+  for (const purchase of purchases) {
+    const session = owner(purchase.created_at);
+    if (session) buckets.get(session.id)?.purchases.push(purchase);
+  }
+
+  return {
+    shopName: shopName || "Loja",
+    sessions: sessions.map((session) => {
+      const bucket = buckets.get(session.id) ?? { sales: [], movements: [], purchases: [] };
+      const payments: { method: string; cents: number }[] = [];
+      const sellers = new Map<string, { count: number; cents: number }>();
+      const products = new Map<string, { name: string; quantity: number; cents: number }>();
+      let units = 0;
+      const saleRows = bucket.sales.map((sale) => {
+        const parts = sale.sale_payments?.length
+          ? sale.sale_payments.map((payment) => ({ method: payment.payment_method, cents: payment.amount_cents }))
+          : [{ method: sale.payment_method, cents: sale.total_cents }];
+        payments.push(...parts);
+        const seller = sale.seller_name?.trim() || "Sem vendedor";
+        const sold = sellers.get(seller) ?? { count: 0, cents: 0 };
+        sold.count += 1;
+        sold.cents += sale.total_cents;
+        sellers.set(seller, sold);
+        for (const item of sale.sale_items ?? []) {
+          units += item.quantity;
+          const key = item.product_id || item.product_name;
+          const row = products.get(key) ?? { name: item.product_name, quantity: 0, cents: 0 };
+          row.quantity += item.quantity;
+          row.cents += item.total_cents;
+          products.set(key, row);
+        }
+        return {
+          id: sale.id,
+          at: sale.created_at,
+          seller,
+          cents: sale.total_cents,
+          items: pieceList((sale.sale_items ?? []).map((item) => ({ quantity: item.quantity, name: item.product_name }))),
+          payments: parts.map((part) => `${labelOf(part.method)} ${formatBRL(part.cents)}`).join(" · "),
+        };
+      });
+      const byMethod = new Map<string, { cents: number; count: number }>();
+      for (const payment of payments) {
+        const row = byMethod.get(payment.method) ?? { cents: 0, count: 0 };
+        row.cents += payment.cents;
+        row.count += 1;
+        byMethod.set(payment.method, row);
+      }
+      const seen = new Set<string>();
+      const revenue = receiptMethods.map((method) => {
+        seen.add(method.id);
+        const row = byMethod.get(method.id);
+        return { name: method.name, cents: row?.cents ?? 0, count: row?.count ?? 0 };
+      });
+      for (const [id, row] of byMethod) {
+        if (seen.has(id) || row.cents === 0) continue;
+        revenue.push({ name: labelOf(id), cents: row.cents, count: row.count });
+      }
+      const cashSalesCents = payments.reduce((sum, payment) => sum + (cashIds.has(payment.method) ? payment.cents : 0), 0);
+      const inCents = bucket.movements.filter((movement) => movement.kind === "entrada").reduce((sum, movement) => sum + movement.amount_cents, 0);
+      const outCents = bucket.movements.filter((movement) => movement.kind === "retirada").reduce((sum, movement) => sum + movement.amount_cents, 0);
+      const purchaseRows = bucket.purchases.map((purchase) => ({
+        id: purchase.id,
+        at: purchase.created_at,
+        supplier: purchase.supplier?.trim() || "Sem fornecedor",
+        method: purchase.payment_method ? labelOf(purchase.payment_method) : "Sem forma",
+        cents: purchase.total_cents,
+        fromDrawer: Boolean(purchase.payment_method && drawerIds.has(purchase.payment_method)),
+        items: pieceList((purchase.purchase_items ?? []).map((item) => ({ quantity: item.quantity, name: item.product_name }))),
+      }));
+      const purchaseCents = purchaseRows.filter((purchase) => purchase.fromDrawer).reduce((sum, purchase) => sum + purchase.cents, 0);
+      const composedCents = session.opening_cents + cashSalesCents + inCents - outCents - purchaseCents;
+      const open = session.closed_at == null;
+      const expectedCents = !open && session.expected_cents != null ? session.expected_cents : composedCents;
+      return {
+        id: session.id,
+        open,
+        openedAt: session.opened_at,
+        closedAt: session.closed_at,
+        openedBy: personName(names, session.opened_by),
+        closedBy: personName(names, session.closed_by),
+        openingNote: session.opening_note,
+        closingNote: session.closing_note,
+        openingCents: session.opening_cents,
+        cashSalesCents,
+        cashMethods: methodRows.filter((method) => method.kind === "recebimento" && method.counts_as_cash).map((method) => method.name).join(", "),
+        inCents,
+        outCents,
+        purchaseCents,
+        composedCents,
+        expectedCents,
+        countedCents: session.counted_cents,
+        differenceCents: open ? null : session.difference_cents,
+        mismatch: !open && session.expected_cents != null && session.expected_cents !== composedCents,
+        billedCents: bucket.sales.reduce((sum, sale) => sum + sale.total_cents, 0),
+        saleCount: bucket.sales.length,
+        units,
+        revenue,
+        sellers: [...sellers.entries()]
+          .map(([name, row]) => ({ name, cents: row.cents, count: row.count }))
+          .sort((a, b) => b.cents - a.cents || a.name.localeCompare(b.name, "pt")),
+        products: [...products.values()].sort((a, b) => b.cents - a.cents || a.name.localeCompare(b.name, "pt")),
+        movements: bucket.movements.map((movement) => ({
+          id: movement.id,
+          at: movement.created_at,
+          kind: movement.kind,
+          cents: movement.amount_cents,
+          note: movement.note,
+          actor: personName(names, movement.created_by) || "Usuário não identificado",
+        })),
+        purchases: purchaseRows,
+        sales: saleRows,
+      } satisfies CashClosing;
+    }),
+  };
 }
 
 export async function listTape(module: "caixa_vendas" | "compras_estoque" | "perfis" | "cadastro_produtos") {

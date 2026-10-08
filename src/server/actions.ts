@@ -195,8 +195,6 @@ type ProductDraft = {
   unit: string;
   price: string;
   minStock: number;
-  combo: boolean;
-  parts: { product_id: string; quantity: number }[];
   ncm: string;
   cfop: string;
   taxCode: string;
@@ -224,8 +222,6 @@ function draftItems(formData: FormData): ProductDraft[] | { error: string } {
         unit: formData.get("size_unit"),
         price: formData.get("price"),
         minStock: formData.get("minStock"),
-        combo: formData.get("combo") === "on",
-        parts: formData.get("parts"),
         ncm: formData.get("ncm"),
         cfop: formData.get("cfop"),
         taxCode: formData.get("taxCode"),
@@ -245,8 +241,8 @@ function draftItems(formData: FormData): ProductDraft[] | { error: string } {
     const category = String(item.category ?? "").trim();
     const price = String(item.price ?? "").trim();
     const minStock = Number(item.minStock);
-    const combo = item.combo === true || item.combo === "on";
     const label = name || `Item ${index + 1}`;
+    if (item.combo === true || item.combo === "on") return { error: `${label}: combo se cadastra em Cadastro, Combos.` };
     if (name.length < 2) return { error: `${label}: dê um nome ao produto.` };
     if (brand.length < 2) return { error: `${label}: informe a marca.` };
     if (!category) return { error: `${label}: escolha a categoria.` };
@@ -256,29 +252,8 @@ function draftItems(formData: FormData): ProductDraft[] | { error: string } {
     if (!size || !Number.isFinite(amount) || amount <= 0) return { error: `${label}: informe o tamanho.` };
     if (unit !== "ml" && unit !== "g") return { error: `${label}: escolha ml ou gramas.` };
     if (parseBRLToCents(price) == null) return { error: `${label}: informe o valor de venda. Use 3,50 por exemplo.` };
-    if (!combo && (!Number.isInteger(minStock) || minStock < 0)) {
+    if (!Number.isInteger(minStock) || minStock < 0) {
       return { error: `${label}: o estoque mínimo precisa ser um número inteiro a partir de zero.` };
-    }
-    let parts: { product_id: string; quantity: number }[] = [];
-    if (combo) {
-      let rawParts: unknown = item.parts;
-      if (typeof rawParts === "string") {
-        try {
-          rawParts = JSON.parse(rawParts);
-        } catch {
-          return { error: `${label}: monte o combo com produtos já cadastrados.` };
-        }
-      }
-      if (!Array.isArray(rawParts)) return { error: `${label}: monte o combo com produtos já cadastrados.` };
-      parts = rawParts
-        .map((part) => {
-          const line = part as { product_id?: string; quantity?: number };
-          return { product_id: String(line.product_id ?? ""), quantity: Number(line.quantity) };
-        })
-        .filter((part) => part.product_id && Number.isInteger(part.quantity) && part.quantity > 0);
-      if (new Set(parts.map((part) => part.product_id)).size < 2) {
-        return { error: `${label}: o combo precisa de dois ou mais produtos diferentes.` };
-      }
     }
     const fiscal = {
       ncm: cleanNcm(String(item.ncm ?? "")),
@@ -295,27 +270,48 @@ function draftItems(formData: FormData): ProductDraft[] | { error: string } {
       size,
       unit,
       price,
-      minStock: combo ? 0 : minStock,
-      combo,
-      parts,
+      minStock,
       ...fiscal,
     });
   }
   return items;
 }
 
-function parseComboParts(formData: FormData): { lines: { product_id: string; quantity: number }[] } | { error: string } {
-  if (formData.get("combo") !== "on") return { lines: [] };
-  let parts: { product_id: string; quantity: number }[] = [];
-  try {
-    parts = JSON.parse(String(formData.get("parts") ?? "[]"));
-  } catch {
-    return { error: "Monte o combo com produtos já cadastrados." };
+function readComboLines(raw: unknown): { lines: { product_id: string; quantity: number }[] } | { error: string } {
+  let value = raw;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return { error: "Monte o combo com produtos já cadastrados." };
+    }
   }
-  const lines = parts.filter((part) => part.product_id && Number.isInteger(part.quantity) && part.quantity > 0);
+  if (!Array.isArray(value)) return { error: "Monte o combo com produtos já cadastrados." };
+  const lines = value
+    .map((part) => {
+      const line = part as { product_id?: string; quantity?: number | string };
+      return { product_id: String(line.product_id ?? ""), quantity: Number(line.quantity) };
+    })
+    .filter((part) => part.product_id && Number.isInteger(part.quantity) && part.quantity > 0);
   if (new Set(lines.map((part) => part.product_id)).size < 2) {
-    return { error: "O combo precisa de mais de um produto já cadastrado." };
+    return { error: "Este cadastro é apenas para combos. Inclua dois ou mais produtos diferentes." };
   }
+  return { lines };
+}
+
+async function readyComboParts(
+  supabase: Awaited<ReturnType<typeof db>>,
+  lines: { product_id: string; quantity: number }[],
+  comboId?: string,
+) {
+  if (comboId && lines.some((line) => line.product_id === comboId)) {
+    return { error: "O combo não pode incluir ele mesmo." };
+  }
+  const ids = [...new Set(lines.map((line) => line.product_id))];
+  const { data, error } = await supabase.from("products").select("id, is_combo").in("id", ids);
+  if (error) return { error: message(error) };
+  if ((data ?? []).length !== ids.length) return { error: "Monte o combo com produtos já cadastrados." };
+  if ((data ?? []).some((product) => product.is_combo)) return { error: "O combo só junta produtos simples, não outro combo." };
   return { lines };
 }
 
@@ -334,17 +330,16 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
     if (!category) {
       return { error: names.length ? `${names.join(", ")} já ficou cadastrado. ${item.name}: escolha uma categoria.` : `${item.name}: escolha uma categoria.` };
     }
-    const comboCost = item.combo ? await comboCostCents(supabase, item.parts) : 0;
     const { data: created, error } = await supabase.from("products").insert({
       name: item.name,
       category: item.category,
       attributes: details.attributes ?? {},
       sale_price_cents: price,
-      cost_price_cents: comboCost,
-      avg_cost_cents: comboCost,
+      cost_price_cents: 0,
+      avg_cost_cents: 0,
       stock_quantity: 0,
       min_stock: item.minStock,
-      is_combo: item.combo,
+      is_combo: false,
       active: true,
       ncm: item.ncm || null,
       cfop: item.cfop,
@@ -354,12 +349,6 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
     if (error || !created) {
       const reason = error ? message(error) : "Não foi possível cadastrar.";
       return { error: names.length ? `${names.join(", ")} já ficou cadastrado. ${item.name}: ${reason}` : `${item.name}: ${reason}` };
-    }
-    if (item.combo) {
-      const { error: partError } = await supabase.from("product_components").insert(
-        item.parts.map((part) => ({ combo_id: created.id, product_id: part.product_id, quantity: part.quantity })),
-      );
-      if (partError) return { error: names.length ? `${names.join(", ")} já ficou cadastrado. ${item.name}: ${message(partError)}` : message(partError) };
     }
     names.push(item.name);
   }
@@ -384,11 +373,11 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   const price = parseBRLToCents(parsed.data.price);
   if (price == null) return { error: "Preço de venda inválido." };
-  const combo = formData.get("combo") === "on";
-  const parts = parseComboParts(formData);
-  if (combo && "error" in parts) return { error: parts.error };
+  if (formData.get("combo") === "on") return { error: "Combo se cadastra em Cadastro, Combos." };
 
   const supabase = await db();
+  const { data: current } = await supabase.from("products").select("is_combo").eq("id", id).maybeSingle();
+  if (current?.is_combo) return { error: "Altere este combo em Cadastro, Combos." };
   const details = await readAttributes(supabase, parsed.data.category, formData);
   if ("error" in details && details.error) return { error: details.error };
   const fiscal = {
@@ -406,10 +395,9 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
       category: parsed.data.category,
       attributes: details.attributes ?? {},
       sale_price_cents: price,
-      ...(combo && "lines" in parts ? { cost_price_cents: await comboCostCents(supabase, parts.lines) } : {}),
-      min_stock: combo ? 0 : parsed.data.minStock,
+      min_stock: parsed.data.minStock,
       active: formData.get("active") === "on",
-      is_combo: combo,
+      is_combo: false,
       ncm: fiscal.ncm || null,
       cfop: fiscal.cfop,
       tax_code: fiscal.taxCode,
@@ -417,15 +405,6 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     })
     .eq("id", id);
   if (error) return { error: message(error) };
-  if (combo && "lines" in parts) {
-    await supabase.from("product_components").delete().eq("combo_id", id);
-    const { error: partError } = await supabase.from("product_components").insert(
-      parts.lines.map((part) => ({ combo_id: id, product_id: part.product_id, quantity: part.quantity })),
-    );
-    if (partError) return { error: message(partError) };
-  } else {
-    await supabase.from("product_components").delete().eq("combo_id", id);
-  }
   await supabase.rpc("append_tape", {
     p_module: "cadastro_produtos",
     p_summary: `Produto atualizado: ${parsed.data.name}`,
@@ -438,11 +417,22 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
 export async function deleteProduct(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const id = String(formData.get("id") ?? "");
   const supabase = await db();
-  const { data: product } = await supabase.from("products").select("name").eq("id", id).maybeSingle();
+  const { data: product } = await supabase.from("products").select("name, is_combo").eq("id", id).maybeSingle();
   if (!product) return { error: "Produto não encontrado." };
 
-  const { count } = await supabase.from("product_components").select("combo_id", { count: "exact", head: true }).eq("product_id", id);
-  if (count) return { error: "Este produto entra num combo. Tire ele do combo antes de excluir." };
+  if (product.is_combo) {
+    const { error: partError } = await supabase.from("product_components").delete().eq("combo_id", id);
+    if (partError) return { error: message(partError) };
+  } else {
+    const { data: links } = await supabase.from("product_components").select("combo_id").eq("product_id", id);
+    const comboIds = [...new Set((links ?? []).map((link) => link.combo_id))];
+    if (comboIds.length > 0) {
+      const { data: combos } = await supabase.from("products").select("name").in("id", comboIds);
+      const names = (combos ?? []).map((combo) => combo.name).filter(Boolean);
+      const where = names.length ? ` do combo ${names.join(", ")}` : " de um combo";
+      return { error: `Este produto entra${where}. Abra Combos, exclua esse item da composição e salve.` };
+    }
+  }
 
   const { error } = await supabase.from("products").delete().eq("id", id);
   if (error) {
@@ -451,6 +441,7 @@ export async function deleteProduct(_prev: ActionState, formData: FormData): Pro
   }
   await supabase.rpc("append_tape", { p_module: "cadastro_produtos", p_summary: `Produto excluído: ${product.name}` });
   revalidatePath("/produtos");
+  revalidatePath("/produtos/combos");
   revalidatePath("/vendas");
   revalidatePath("/compras");
   return { ok: "Produto excluído." };
@@ -973,44 +964,99 @@ export async function deleteCategory(_prev: ActionState, formData: FormData): Pr
   return { ok: "Categoria removida." };
 }
 
-export async function saveCombo(_prev: ActionState, formData: FormData): Promise<ActionState> {
+function comboFields(formData: FormData) {
+  const parts = readComboLines(String(formData.get("parts") ?? "[]"));
+  if ("error" in parts) return parts;
   const name = String(formData.get("name") ?? "").trim();
+  const category = String(formData.get("category") ?? "").trim();
   const price = parseBRLToCents(String(formData.get("price") ?? ""));
-  let parts: { product_id: string; quantity: number }[] = [];
-  try {
-    parts = JSON.parse(String(formData.get("parts") ?? "[]"));
-  } catch {
-    return { error: "Monte o combo com os produtos." };
-  }
-  const lines = parts.filter((part) => part.product_id && part.quantity > 0);
-  if (name.length < 2) return { error: "Informe o nome do combo." };
-  if (price == null) return { error: "Informe o preço do combo." };
-  if (new Set(lines.map((part) => part.product_id)).size < 2) return { error: "O combo precisa de pelo menos 2 produtos." };
+  if (name.length < 2) return { error: "Dê um nome ao combo." };
+  if (!category) return { error: "Escolha a categoria." };
+  if (price == null) return { error: "Informe o valor de venda. Use 3,50 por exemplo." };
+  return { name, category, price, lines: parts.lines };
+}
+
+export async function saveCombo(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const fields = comboFields(formData);
+  if ("error" in fields) return { error: fields.error };
 
   const supabase = await db();
+  const { data: category } = await supabase.from("categories").select("id").eq("slug", fields.category).maybeSingle();
+  if (!category) return { error: "Escolha a categoria." };
+  const ready = await readyComboParts(supabase, fields.lines);
+  if ("error" in ready) return { error: ready.error };
+  const cost = await comboCostCents(supabase, ready.lines);
   const { data, error } = await supabase
     .from("products")
     .insert({
-      name,
-      category: "outro",
-      sale_price_cents: price,
-      cost_price_cents: 0,
+      name: fields.name,
+      category: fields.category,
+      sale_price_cents: fields.price,
+      cost_price_cents: cost,
+      avg_cost_cents: cost,
       stock_quantity: 0,
       min_stock: 0,
       is_combo: true,
+      active: true,
       attributes: {},
+      cfop: "5102",
+      tax_code: "102",
+      origin: "0",
     })
     .select("id")
     .single();
   if (error || !data) return { error: error ? message(error) : "Não foi possível criar o combo." };
   const { error: partError } = await supabase.from("product_components").insert(
-    lines.map((part) => ({ combo_id: data.id, product_id: part.product_id, quantity: part.quantity })),
+    ready.lines.map((part) => ({ combo_id: data.id, product_id: part.product_id, quantity: part.quantity })),
+  );
+  if (partError) {
+    await supabase.from("products").delete().eq("id", data.id);
+    return { error: message(partError) };
+  }
+  await supabase.rpc("append_tape", { p_module: "cadastro_produtos", p_summary: `Combo criado: ${fields.name}` });
+  revalidatePath("/produtos");
+  revalidatePath("/produtos/combos");
+  revalidatePath("/vendas");
+  return { ok: "Combo cadastrado." };
+}
+
+export async function updateCombo(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = String(formData.get("id") ?? "");
+  const fields = comboFields(formData);
+  if ("error" in fields) return { error: fields.error };
+
+  const supabase = await db();
+  const { data: current } = await supabase.from("products").select("id, is_combo").eq("id", id).maybeSingle();
+  if (!current?.is_combo) return { error: "Esse cadastro não é um combo." };
+  const { data: category } = await supabase.from("categories").select("id").eq("slug", fields.category).maybeSingle();
+  if (!category) return { error: "Escolha a categoria." };
+  const ready = await readyComboParts(supabase, fields.lines, id);
+  if ("error" in ready) return { error: ready.error };
+  const cost = await comboCostCents(supabase, ready.lines);
+  const { error } = await supabase
+    .from("products")
+    .update({
+      name: fields.name,
+      category: fields.category,
+      sale_price_cents: fields.price,
+      cost_price_cents: cost,
+      avg_cost_cents: cost,
+      active: formData.get("active") === "on",
+      is_combo: true,
+    })
+    .eq("id", id);
+  if (error) return { error: message(error) };
+  const { error: clearError } = await supabase.from("product_components").delete().eq("combo_id", id);
+  if (clearError) return { error: message(clearError) };
+  const { error: partError } = await supabase.from("product_components").insert(
+    ready.lines.map((part) => ({ combo_id: id, product_id: part.product_id, quantity: part.quantity })),
   );
   if (partError) return { error: message(partError) };
-  await supabase.rpc("append_tape", { p_module: "compras_estoque", p_summary: `Combo criado: ${name}` });
+  await supabase.rpc("append_tape", { p_module: "cadastro_produtos", p_summary: `Combo atualizado: ${fields.name}` });
   revalidatePath("/produtos");
+  revalidatePath("/produtos/combos");
   revalidatePath("/vendas");
-  return { ok: "Combo criado." };
+  return { ok: "Combo atualizado." };
 }
 
 export async function savePaymentMethod(_prev: ActionState, formData: FormData): Promise<ActionState> {

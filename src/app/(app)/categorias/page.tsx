@@ -13,7 +13,7 @@ export default async function CategoriesPage() {
         title="Categorias"
         description="Cadastre as categorias dos produtos. Só as ativas aparecem como filtro na venda."
       />
-      <ModuleNav items={[{ href: "/produtos", label: "Cadastro" }, { href: "/categorias", label: "Categorias" }]} />
+      <ModuleNav items={[{ href: "/produtos", label: "Cadastro" }, { href: "/produtos/combos", label: "Combos" }, { href: "/categorias", label: "Categorias" }]} />
       <CategoryManager categories={categories} />
     </div>
   );

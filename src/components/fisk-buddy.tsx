@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const HEIGHT = 270;
-const WIDTH = 160;
+const HEIGHT = 162;
+const WIDTH = 96;
 const CHEER_MS = 2800;
 const FRAMES = 4;
 const ORDER = [0, 1, 2, 3];
@@ -179,7 +179,7 @@ export function FiskBuddy() {
           Boa venda!
         </span>
       ) : null}
-      <span ref={shadow} className="absolute bottom-1 left-1/2 h-3 w-16 rounded-full bg-black/70" />
+      <span ref={shadow} className="absolute bottom-1 left-1/2 h-2 w-10 rounded-full bg-black/70" />
       <canvas ref={fire} className="pointer-events-none absolute top-0 left-1/2 h-48 w-72 -translate-x-1/2 -translate-y-24" />
       <div ref={figure} className="relative h-full w-full origin-bottom">
         <canvas ref={canvas} className="h-full w-full" />
