@@ -1,15 +1,12 @@
-import { redirect } from "next/navigation";
+import { ModuleNav } from "@/components/module-nav";
+import { PageHero } from "@/components/page-hero";
+import { financeReports } from "@/lib/report-nav";
 
-export default async function FinanceReportIndex({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const params = await searchParams;
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (typeof value === "string" && value) query.set(key, value);
-  }
-  const suffix = query.toString();
-  redirect(suffix ? `/relatorios/financeiro/lucro?${suffix}` : "/relatorios/financeiro/lucro");
+export default function FinanceReportIndex() {
+  return (
+    <div className="space-y-3">
+      <PageHero eyebrow="Financeiro" title="Escolha o relatório" description="Nada abre sozinho. O relatório aparece quando você clica nele." />
+      <ModuleNav items={[...financeReports]} />
+    </div>
+  );
 }

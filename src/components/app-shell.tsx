@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BarChart3, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Package, Receipt, Settings, ShoppingBag, Store, Users, Wallet, Warehouse } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
@@ -100,6 +100,10 @@ function visibleChildren(children: NavChild[], role: Role): NavChild[] {
     .map((child) => ({ ...child, children: child.children ? visibleChildren(child.children, role) : undefined }));
 }
 
+function hasSubmenu(children: NavChild[]) {
+  return children.length > 1 || children.some((child) => (child.children ?? []).length > 0);
+}
+
 function menuKey(parent: string, label: string) {
   return parent ? `${parent}/${label}` : label;
 }
@@ -121,6 +125,7 @@ function Submenu({
   hash,
   depth,
   parentKey,
+  inset = true,
   isOpen,
   onToggle,
 }: {
@@ -129,11 +134,12 @@ function Submenu({
   hash: string;
   depth: number;
   parentKey: string;
+  inset?: boolean;
   isOpen: (key: string) => boolean;
-  onToggle: (key: string, href: string) => void;
+  onToggle: (key: string) => void;
 }) {
   return (
-    <div className={cn("mt-1 flex flex-col gap-1", depth === 0 ? "ml-7" : "ml-4")}>
+    <div className={cn("mt-1 flex flex-col gap-1", depth === 0 ? (inset ? "ml-7" : "") : "ml-4")}>
       {items.map((child) => {
         const key = menuKey(parentKey, child.label);
         const nested = child.children ?? [];
@@ -151,7 +157,7 @@ function Submenu({
           const open = isOpen(key);
           return (
             <div key={child.label}>
-              <button type="button" aria-expanded={open} className={className} onClick={() => onToggle(key, child.href)}>
+              <button type="button" aria-expanded={open} className={className} onClick={() => onToggle(key)}>
                 {child.label}
                 <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
               </button>
@@ -195,13 +201,14 @@ export function AppShell({
   shopName?: string;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [hash, setHash] = useState("");
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [mobileKey, setMobileKey] = useState<string | null>(null);
   const [trackedPath, setTrackedPath] = useState(pathname);
   if (trackedPath !== pathname) {
     setTrackedPath(pathname);
     setOpen({});
+    setMobileKey(null);
   }
   useEffect(() => {
     const read = () => setHash(window.location.hash);
@@ -222,11 +229,8 @@ export function AppShell({
     return keys;
   });
   const isOpen = (key: string) => (key in open ? open[key] : activeKeys.includes(key));
-  const onToggle = (key: string, href: string) => {
-    const opening = !isOpen(key);
-    setOpen((current) => ({ ...current, [key]: opening }));
-    const path = href.split("#")[0] ?? href;
-    if (opening && path && pathname !== path) router.push(path);
+  const onToggle = (key: string) => {
+    setOpen((current) => ({ ...current, [key]: !isOpen(key) }));
   };
 
   return (
@@ -239,7 +243,7 @@ export function AppShell({
             const Icon = item.icon;
             const active = groupActive(pathname, item);
             const children = visibleChildren(item.children, role);
-            const showChildren = children.length > 1 || children.some((child) => (child.children ?? []).length > 0);
+            const showChildren = hasSubmenu(children);
             const expanded = showChildren && isOpen(item.label);
             const itemClass = cn(
               "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition-colors",
@@ -248,7 +252,7 @@ export function AppShell({
             return (
               <div key={item.label}>
                 {showChildren ? (
-                  <button type="button" aria-expanded={expanded} className={itemClass} onClick={() => onToggle(item.label, item.href)}>
+                  <button type="button" aria-expanded={expanded} className={itemClass} onClick={() => onToggle(item.label)}>
                     <Icon className="size-4" />
                     <span className="flex-1">{item.label}</span>
                     <ChevronDown className={cn("size-4 transition-transform", expanded && "rotate-180")} />
@@ -287,22 +291,51 @@ export function AppShell({
           </form>
         </header>
         <main className="flex-1 px-3 py-3 pb-16 md:px-4 md:pb-4">{children}</main>
-        <nav className={`fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-background/95 px-1 py-2 backdrop-blur md:hidden ${items.length <= 2 ? "grid-cols-2" : items.length > 6 ? "grid-cols-4" : "grid-cols-6"}`}>
+        <div className="fixed inset-x-0 bottom-0 z-40 md:hidden">
+        {mobileKey ? (
+          <div
+            className="mx-3 mb-2 max-h-[50vh] overflow-y-auto rounded-2xl border border-border bg-card p-3 shadow-lg"
+            onClick={(event) => {
+              if (event.target instanceof Element && event.target.closest("a")) setMobileKey(null);
+            }}
+          >
+            <Submenu
+              items={visibleChildren(items.find((item) => item.label === mobileKey)?.children ?? [], role)}
+              pathname={pathname}
+              hash={hash}
+              depth={0}
+              parentKey={mobileKey}
+              inset={false}
+              isOpen={isOpen}
+              onToggle={onToggle}
+            />
+          </div>
+        ) : null}
+        <nav className={`grid border-t border-border bg-background/95 px-1 py-2 backdrop-blur ${items.length <= 2 ? "grid-cols-2" : items.length > 6 ? "grid-cols-4" : "grid-cols-6"}`}>
           {items.map((item) => {
             const Icon = item.icon;
+            const children = visibleChildren(item.children, role);
+            const showChildren = hasSubmenu(children);
             const active = groupActive(pathname, item);
+            const expanded = mobileKey === item.label;
+            const itemClass = cn("flex flex-col items-center gap-1 rounded-lg py-1 text-[10px]", active || expanded ? "text-primary" : "text-muted-foreground");
+            if (showChildren) {
+              return (
+                <button key={item.label} type="button" aria-expanded={expanded} className={itemClass} onClick={() => setMobileKey(expanded ? null : item.label)}>
+                  <Icon className="size-4" />
+                  {item.label}
+                </button>
+              );
+            }
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn("flex flex-col items-center gap-1 rounded-lg py-1 text-[10px]", active ? "text-primary" : "text-muted-foreground")}
-              >
+              <Link key={item.href} href={item.href} className={itemClass} onClick={() => setMobileKey(null)}>
                 <Icon className="size-4" />
                 {item.label}
               </Link>
             );
           })}
         </nav>
+        </div>
       </div>
       <FiskBuddy />
     </div>
