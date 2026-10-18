@@ -3,7 +3,7 @@ import type { NfceItem, NfcePayment } from "@/lib/nfce-xml";
 import { requireUser, shopFiscal } from "@/server/queries";
 
 type SaleItem = {
-  product_id: string;
+  product_id: string | null;
   product_name: string;
   quantity: number;
   unit_price_cents: number;
@@ -45,7 +45,7 @@ export async function salesForXml(from: Date, to: Date) {
   const truncated = list.length > 100;
   const page = list.slice(0, 100);
   const ids = page.map((sale) => sale.id);
-  const productIds = [...new Set(page.flatMap((sale) => (sale.sale_items ?? []).map((item) => item.product_id)))];
+  const productIds = [...new Set(page.flatMap((sale) => (sale.sale_items ?? []).map((item) => item.product_id).filter((id): id is string => Boolean(id))))];
   const [{ data: invoices }, { data: products }, { data: methods }] = await Promise.all([
     ids.length
       ? supabase.from("sale_invoices").select("sale_id, xml").in("sale_id", ids)
@@ -72,7 +72,7 @@ function saleXml(
   const items = sale.sale_items ?? [];
   const payments = sale.sale_payments ?? [];
   const gaps = items.flatMap((item) => {
-    const product = fiscal.get(item.product_id);
+    const product = item.product_id ? fiscal.get(item.product_id) : undefined;
     const missing = productFiscalGaps({
       ncm: product?.ncm ?? "",
       cfop: product?.cfop ?? "",
@@ -97,7 +97,7 @@ function saleXml(
     pending,
     storedXml,
     items: items.map((item) => {
-      const product = fiscal.get(item.product_id);
+      const product = item.product_id ? fiscal.get(item.product_id) : undefined;
       return {
         name: item.product_name,
         ncm: product?.ncm ?? "",

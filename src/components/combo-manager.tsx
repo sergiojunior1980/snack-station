@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
@@ -14,13 +15,13 @@ const comboOnly = "Este cadastro é apenas para combos. Inclua dois ou mais prod
 type Part = { key: string; productId: string; quantity: string };
 
 export function ComboManager({ products, categories }: { products: Product[]; categories: Category[] }) {
+  const router = useRouter();
   const combos = products.filter((product) => product.is_combo);
-  const simples = products.filter((product) => !product.is_combo);
   const [editing, setEditing] = useState<string | null>(null);
 
   return (
     <div className="space-y-3">
-      <ComboForm simples={simples} categories={categories} />
+      <ComboForm products={products} categories={categories} onSaved={() => router.refresh()} />
       <div className="grid gap-2 md:grid-cols-2">
         {combos.length === 0 ? (
           <p className="rounded-2xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground md:col-span-2">
@@ -49,7 +50,16 @@ export function ComboManager({ products, categories }: { products: Product[]; ca
                 </div>
               </div>
               {editing === combo.id ? (
-                <ComboForm combo={combo} simples={simples} categories={categories} onSaved={() => setEditing(null)} />
+                <ComboForm
+                  key={combo.id}
+                  combo={combo}
+                  products={products}
+                  categories={categories}
+                  onSaved={() => {
+                    setEditing(null);
+                    router.refresh();
+                  }}
+                />
               ) : null}
             </article>
           ))
@@ -61,15 +71,16 @@ export function ComboManager({ products, categories }: { products: Product[]; ca
 
 function ComboForm({
   combo,
-  simples,
+  products,
   categories,
   onSaved,
 }: {
   combo?: Product;
-  simples: Product[];
+  products: Product[];
   categories: Category[];
   onSaved?: () => void;
 }) {
+  const simples = products.filter((product) => !product.is_combo);
   const actionFn = combo ? updateCombo : saveCombo;
   const [state, action, pending] = useActionState(actionFn, null as ActionState);
   const [category, setCategory] = useState(combo?.category ?? "");
@@ -81,7 +92,7 @@ function ComboForm({
     .map((part) => ({ product_id: part.productId, quantity: Number(part.quantity) }))
     .filter((part) => part.product_id && Number.isInteger(part.quantity) && part.quantity > 0);
   const cost = payload.reduce((sum, part) => {
-    const item = simples.find((product) => product.id === part.product_id);
+    const item = products.find((product) => product.id === part.product_id);
     return sum + (item?.display_cost_cents ?? 0) * part.quantity;
   }, 0);
 
@@ -95,10 +106,10 @@ function ComboForm({
   }
 
   useEffect(() => {
-    if (!combo || !state?.ok || saved.current === state) return;
+    if (!state?.ok || saved.current === state) return;
     saved.current = state;
     onSaved?.();
-  }, [combo, onSaved, state]);
+  }, [onSaved, state]);
 
   return (
     <form
@@ -111,6 +122,7 @@ function ComboForm({
           category,
           price: String(data.get("price") ?? ""),
           parts: payload,
+          products,
         });
         if (!message) return;
         event.preventDefault();
@@ -153,7 +165,7 @@ function ComboForm({
       ) : null}
       <div className="space-y-2">
         {parts.map((part) => {
-          const options = simples.filter((item) => item.id === part.productId || !parts.some((row) => row.key !== part.key && row.productId === item.id));
+          const options = choices(part, parts, products);
           return (
             <div key={part.key} className="flex items-center gap-2">
               <Select
@@ -207,14 +219,25 @@ function ComboForm({
 }
 
 function DeleteCombo({ id }: { id: string }) {
+  const router = useRouter();
   const [state, action, pending] = useActionState(deleteProduct, null as ActionState);
+  const seen = useRef<ActionState>(null);
+  const [hideError, setHideError] = useState(false);
+
+  useEffect(() => {
+    if (!state || seen.current === state) return;
+    seen.current = state;
+    setHideError(false);
+    if (state.ok) router.refresh();
+  }, [router, state]);
+
   return (
     <form action={action}>
       <input type="hidden" name="id" value={id} />
       <Button type="submit" variant="ghost" size="sm" disabled={pending}>
         {pending ? "Excluindo…" : "Excluir"}
       </Button>
-      {state?.error ? <p className="mt-1 text-xs text-destructive">{state.error}</p> : null}
+      {state?.error && !hideError ? <Notice message={state.error} onClose={() => setHideError(true)} /> : null}
     </form>
   );
 }
@@ -241,6 +264,14 @@ function initialParts(combo?: Product): Part[] {
   return saved.map((part) => ({ key: part.product_id, productId: part.product_id, quantity: String(part.quantity) }));
 }
 
+function choices(part: Part, parts: Part[], products: Product[]) {
+  const taken = new Set(parts.filter((row) => row.key !== part.key && row.productId).map((row) => row.productId));
+  const available = products.filter((item) => !item.is_combo && !taken.has(item.id));
+  const current = products.find((item) => item.id === part.productId);
+  if (current?.is_combo) return [current, ...available];
+  return available;
+}
+
 function composition(combo: Product, products: Product[]) {
   const names = (combo.components ?? []).map((part) => {
     const item = products.find((row) => row.id === part.product_id);
@@ -249,8 +280,17 @@ function composition(combo: Product, products: Product[]) {
   return names.length ? names.join(" · ") : "Sem produtos na composição.";
 }
 
-function comboIssues(input: { name: string; category: string; price: string; parts: { product_id: string; quantity: number }[] }) {
+function comboIssues(input: {
+  name: string;
+  category: string;
+  price: string;
+  parts: { product_id: string; quantity: number }[];
+  products: Product[];
+}) {
   if (new Set(input.parts.map((part) => part.product_id)).size < 2) return comboOnly;
+  if (input.parts.some((part) => input.products.find((item) => item.id === part.product_id)?.is_combo)) {
+    return "O combo só junta produtos simples, não outro combo. Troque esse item.";
+  }
   if (input.name.trim().length < 2) return "Dê um nome ao combo.";
   if (!input.category) return "Escolha a categoria.";
   if (parseBRLToCents(input.price) == null) return "Informe o valor de venda. Use 3,50 por exemplo.";

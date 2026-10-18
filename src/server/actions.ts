@@ -37,6 +37,9 @@ function message(error: { message: string }) {
   if (text.includes("Não há caixa aberto")) return "Não há caixa aberto.";
   if (text.includes("Informe a observação")) return "Informe a observação do movimento.";
   if (text.includes("validade")) return "A validade não pode ser anterior à entrada.";
+  if (text.includes("update_combo") || text.includes("delete_combo")) {
+    return "Atualize o banco para conseguir alterar e excluir combos.";
+  }
   if (text.includes("Could not find the function") || text.includes("schema cache")) {
     return "Rode o SQL 006_cash_and_stock.sql no Supabase para liberar caixa e estoque.";
   }
@@ -421,8 +424,14 @@ export async function deleteProduct(_prev: ActionState, formData: FormData): Pro
   if (!product) return { error: "Produto não encontrado." };
 
   if (product.is_combo) {
-    const { error: partError } = await supabase.from("product_components").delete().eq("combo_id", id);
-    if (partError) return { error: message(partError) };
+    const { error } = await supabase.rpc("delete_combo", { p_id: id });
+    if (error) return { error: message(error) };
+    revalidatePath("/produtos");
+    revalidatePath("/produtos/combos");
+    revalidatePath("/vendas");
+    revalidatePath("/compras");
+    revalidatePath("/estoque");
+    return { ok: "Combo excluído." };
   } else {
     const { data: links } = await supabase.from("product_components").select("combo_id").eq("product_id", id);
     const comboIds = [...new Set((links ?? []).map((link) => link.combo_id))];
@@ -1033,25 +1042,16 @@ export async function updateCombo(_prev: ActionState, formData: FormData): Promi
   const ready = await readyComboParts(supabase, fields.lines, id);
   if ("error" in ready) return { error: ready.error };
   const cost = await comboCostCents(supabase, ready.lines);
-  const { error } = await supabase
-    .from("products")
-    .update({
-      name: fields.name,
-      category: fields.category,
-      sale_price_cents: fields.price,
-      cost_price_cents: cost,
-      avg_cost_cents: cost,
-      active: formData.get("active") === "on",
-      is_combo: true,
-    })
-    .eq("id", id);
+  const { error } = await supabase.rpc("update_combo", {
+    p_id: id,
+    p_name: fields.name,
+    p_category: fields.category,
+    p_price: fields.price,
+    p_cost: cost,
+    p_active: formData.get("active") === "on",
+    p_lines: ready.lines,
+  });
   if (error) return { error: message(error) };
-  const { error: clearError } = await supabase.from("product_components").delete().eq("combo_id", id);
-  if (clearError) return { error: message(clearError) };
-  const { error: partError } = await supabase.from("product_components").insert(
-    ready.lines.map((part) => ({ combo_id: id, product_id: part.product_id, quantity: part.quantity })),
-  );
-  if (partError) return { error: message(partError) };
   await supabase.rpc("append_tape", { p_module: "cadastro_produtos", p_summary: `Combo atualizado: ${fields.name}` });
   revalidatePath("/produtos");
   revalidatePath("/produtos/combos");
