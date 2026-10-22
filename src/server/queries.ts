@@ -8,7 +8,7 @@ import { paymentLabel } from "@/lib/catalog";
 import { formatBRL } from "@/lib/money";
 import { emptyShopFiscal, type ShopFiscal } from "@/lib/company";
 import type { CashSlip } from "@/lib/cash-slip";
-import type { ReportGrain } from "@/lib/dates";
+import { bucketKey, formatDateTime, type ReportGrain } from "@/lib/dates";
 
 export type Product = {
   id: string;
@@ -367,22 +367,34 @@ function pieceList(parts: { quantity: number; name: string }[]) {
   return parts.map((part) => `${part.quantity}× ${part.name}`).join(", ");
 }
 
-export async function cashClosingReport(from: Date, to: Date) {
+export async function cashClosingReport(sessionId?: string) {
   const { supabase, role, menus, shopName } = await requireUser();
-  const empty = { shopName: shopName || "Loja", sessions: [] as CashClosing[] };
+  const empty = {
+    shopName: shopName || "Loja",
+    session: null as CashClosing | null,
+    closed: [] as { id: string; label: string }[],
+    hasOpen: false,
+  };
   if (!supabase || !canUseMenu(role, menus, "relatorios")) return empty;
   const { data } = await supabase
     .from("cash_sessions")
     .select("id, opened_at, opening_cents, opening_note, opened_by, closed_at, closed_by, counted_cents, expected_cents, difference_cents, closing_note")
     .order("opened_at", { ascending: false })
     .limit(200);
+  const all = (data ?? []) as ClosingSession[];
+  const openSession = all.find((session) => session.closed_at == null) ?? null;
+  const closed = all
+    .filter((session) => session.closed_at)
+    .map((session) => ({
+      id: session.id,
+      label: `${formatDateTime(session.opened_at)} – ${formatDateTime(session.closed_at as string)}`,
+    }));
+  const picked =
+    (sessionId ? all.find((session) => session.id === sessionId && session.closed_at) : null) ?? openSession;
+  const listed = { shopName: shopName || "Loja", closed, hasOpen: Boolean(openSession) };
+  if (!picked) return { ...listed, session: null };
   const now = Date.now();
-  const sessions = ((data ?? []) as ClosingSession[]).filter((session) => {
-    const opened = new Date(session.opened_at).getTime();
-    const closed = session.closed_at ? new Date(session.closed_at).getTime() : null;
-    return (opened >= from.getTime() && opened < to.getTime()) || (closed != null && closed >= from.getTime() && closed < to.getTime());
-  });
-  if (sessions.length === 0) return empty;
+  const sessions = [picked];
 
   const windowStart = sessions.reduce((min, session) => Math.min(min, new Date(session.opened_at).getTime()), Number.POSITIVE_INFINITY);
   const windowEnd = sessions.reduce((max, session) => Math.max(max, session.closed_at ? new Date(session.closed_at).getTime() : now), 0);
@@ -479,9 +491,7 @@ export async function cashClosingReport(from: Date, to: Date) {
     if (session) buckets.get(session.id)?.purchases.push(purchase);
   }
 
-  return {
-    shopName: shopName || "Loja",
-    sessions: sessions.map((session) => {
+  const [session] = sessions.map((session) => {
       const bucket = buckets.get(session.id) ?? { sales: [], movements: [], purchases: [] };
       const payments: { method: string; cents: number }[] = [];
       const sellers = new Map<string, { count: number; cents: number }>();
@@ -586,8 +596,8 @@ export async function cashClosingReport(from: Date, to: Date) {
         purchases: purchaseRows,
         sales: saleRows,
       } satisfies CashClosing;
-    }),
-  };
+  });
+  return { ...listed, session: session ?? null };
 }
 
 export async function listTape(module: "caixa_vendas" | "compras_estoque" | "perfis" | "cadastro_produtos") {
@@ -964,23 +974,123 @@ export async function topProducts(from: Date, to: Date) {
   }[];
 }
 
-export async function productMargins() {
-  const { role, menus } = await requireUser();
-  if (!canUseMenu(role, menus, "relatorios")) return [];
-  const products = await listProducts();
-  return products
-    .map((product) => {
-      const cost = product.display_cost_cents ?? product.cost_price_cents ?? 0;
-      const sale = product.sale_price_cents;
-      return {
-        id: product.id,
-        name: product.name,
-        cost,
-        sale,
-        profit: sale - cost,
-      };
-    })
-    .sort((a, b) => b.profit - a.profit || a.name.localeCompare(b.name, "pt"));
+type ProfitSale = {
+  id: string;
+  total_cents: number;
+  created_at: string;
+  sale_items: { product_id: string | null; product_name: string; quantity: number; total_cents: number }[] | null;
+};
+
+type CostProduct = {
+  id: string;
+  name: string;
+  avg_cost_cents: number | null;
+  cost_price_cents: number | null;
+  is_combo: boolean | null;
+};
+
+function recordedCost(product: CostProduct | undefined) {
+  if (!product) return 0;
+  if ((product.avg_cost_cents ?? 0) > 0) return product.avg_cost_cents ?? 0;
+  return product.cost_price_cents ?? 0;
+}
+
+export async function accumulatedProfit() {
+  const { supabase, role, menus } = await requireUser();
+  const empty = {
+    revenue: 0,
+    cost: 0,
+    profit: 0,
+    sales: 0,
+    units: 0,
+    missing: 0,
+    months: [] as { key: string; revenue: number; cost: number; profit: number; accumulated: number }[],
+    products: [] as { name: string; quantity: number; revenue: number; cost: number; profit: number }[],
+  };
+  if (!supabase || !canUseMenu(role, menus, "relatorios")) return empty;
+
+  const [{ data: productRows }, { data: partRows }, sales] = await Promise.all([
+    supabase.from("products").select("id, name, avg_cost_cents, cost_price_cents, is_combo"),
+    supabase.from("product_components").select("combo_id, product_id, quantity"),
+    rowsInWindow<ProfitSale>((start, end) =>
+      supabase
+        .from("sales")
+        .select("id, total_cents, created_at, sale_items(product_id, product_name, quantity, total_cents)")
+        .order("created_at", { ascending: true })
+        .range(start, end),
+    ),
+  ]);
+
+  const catalog = (productRows ?? []) as CostProduct[];
+  const byId = new Map(catalog.map((product) => [product.id, product]));
+  const byName = new Map(catalog.map((product) => [product.name, product]));
+  const parts = (partRows ?? []) as { combo_id: string; product_id: string; quantity: number }[];
+  const comboCost = new Map<string, number>();
+  for (const product of catalog) {
+    if (!product.is_combo) continue;
+    const cost = parts
+      .filter((part) => part.combo_id === product.id)
+      .reduce((sum, part) => sum + recordedCost(byId.get(part.product_id)) * part.quantity, 0);
+    if (cost > 0) comboCost.set(product.id, cost);
+  }
+
+  const unitCost = (productId: string | null, name: string) => {
+    const product = (productId && byId.get(productId)) || byName.get(name);
+    if (!product) return 0;
+    if (product.is_combo && comboCost.has(product.id)) return comboCost.get(product.id) ?? 0;
+    return recordedCost(product);
+  };
+
+  const months = new Map<string, { revenue: number; cost: number; profit: number }>();
+  const byProduct = new Map<string, { name: string; quantity: number; revenue: number; cost: number; profit: number }>();
+  let revenue = 0;
+  let cost = 0;
+  let units = 0;
+  let missing = 0;
+
+  for (const sale of sales) {
+    revenue += sale.total_cents;
+    let saleCost = 0;
+    for (const item of sale.sale_items ?? []) {
+      const unit = unitCost(item.product_id, item.product_name);
+      const lineCost = unit * item.quantity;
+      if (unit === 0) missing += item.quantity;
+      saleCost += lineCost;
+      units += item.quantity;
+      const row = byProduct.get(item.product_name) ?? { name: item.product_name, quantity: 0, revenue: 0, cost: 0, profit: 0 };
+      row.quantity += item.quantity;
+      row.revenue += item.total_cents;
+      row.cost += lineCost;
+      row.profit = row.revenue - row.cost;
+      byProduct.set(item.product_name, row);
+    }
+    cost += saleCost;
+    const key = bucketKey(sale.created_at, "month");
+    const month = months.get(key) ?? { revenue: 0, cost: 0, profit: 0 };
+    month.revenue += sale.total_cents;
+    month.cost += saleCost;
+    month.profit = month.revenue - month.cost;
+    months.set(key, month);
+  }
+
+  let accumulated = 0;
+  const monthRows = [...months.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, row]) => {
+      accumulated += row.profit;
+      return { key, ...row, accumulated };
+    });
+
+  return {
+    revenue,
+    cost,
+    profit: revenue - cost,
+    sales: sales.length,
+    units,
+    missing,
+    months: monthRows,
+    products: [...byProduct.values()].sort((a, b) => b.profit - a.profit || a.name.localeCompare(b.name, "pt")),
+  };
 }
 
 export async function unsoldProducts(from: Date, to: Date) {
