@@ -60,15 +60,7 @@ export function CashClosingReport({ shopName, sessions }: { shopName: string; se
                 <Pair label="Entradas" value={formatBRL(session.inCents)} />
                 <Pair label="Saídas" value={formatBRL(-session.outCents)} />
                 <Pair label="Compras pagas pelo caixa" value={formatBRL(-session.purchaseCents)} />
-                <Pair label="Soma da composição" value={formatBRL(session.composedCents)} strong />
-                <Pair label="Valor esperado" value={formatBRL(session.expectedCents)} strong />
-                <Pair label="Valor contado" value={session.countedCents == null ? "—" : formatBRL(session.countedCents)} strong />
-                <Pair
-                  label="Diferença"
-                  value={session.differenceCents == null ? "—" : signed(session.differenceCents)}
-                  strong
-                  tone={(session.differenceCents ?? 0) < 0 ? "bad" : "ok"}
-                />
+                {session.mismatch ? <Pair label="Soma da composição" value={formatBRL(session.composedCents)} strong /> : null}
               </dl>
               <p className="mt-2 text-xs text-muted-foreground">Fundo + vendas no caixa + entradas − saídas − compras pagas pelo caixa.</p>
               {session.mismatch ? (

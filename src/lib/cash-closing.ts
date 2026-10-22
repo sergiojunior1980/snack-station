@@ -148,7 +148,7 @@ export function cashClosingDocument(shopName: string, session: CashClosing) {
       <tr><td>Entradas</td>${moneyCell(session.inCents)}</tr>
       <tr><td>Saídas</td>${moneyCell(-session.outCents)}</tr>
       <tr><td>Compras pagas pelo caixa</td>${moneyCell(-session.purchaseCents)}</tr>
-      <tr><td><strong>Soma da composição</strong></td>${moneyCell(session.composedCents)}</tr>
+      ${session.mismatch ? `<tr><td><strong>Soma da composição</strong></td>${moneyCell(session.composedCents)}</tr>` : ""}
     </tbody>
   </table>
   ${session.mismatch ? `<p>O valor gravado no fechamento foi ${formatBRL(session.expectedCents)}. A composição acima foi recalculada com as vendas, movimentos e compras do turno.</p>` : ""}
