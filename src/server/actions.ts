@@ -568,6 +568,8 @@ export async function registerSale(_prev: ActionState, formData: FormData): Prom
   if (error) return { error: message(error) };
   revalidatePath("/vendas");
   revalidatePath("/produtos");
+  revalidatePath("/produtos/combos");
+  revalidatePath("/estoque");
   revalidatePath("/relatorios");
   revalidatePath("/financeiro");
   revalidatePath("/");
