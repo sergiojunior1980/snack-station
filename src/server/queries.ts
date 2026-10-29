@@ -889,10 +889,10 @@ export async function stockBoard() {
   if (!supabase || !canUseMenu(role, menus, "estoque")) return { products: [], lots: [], movements: [], ready: false };
   const { data: products, error } = await supabase
     .from("products")
-    .select("id, name, stock_quantity, avg_cost_cents, cost_price_cents, active")
+    .select("id, name, stock_quantity, avg_cost_cents, cost_price_cents, active, is_combo")
     .order("name");
   if (error) return { products: [], lots: [], movements: [], ready: false };
-  const [{ data: lots }, { data: movements }] = await Promise.all([
+  const [{ data: lots }, { data: movements }, { data: parts }] = await Promise.all([
     supabase
       .from("stock_lots")
       .select("id, product_id, quantity_remaining, unit_cost_cents, received_on, expires_on, supplier")
@@ -904,10 +904,29 @@ export async function stockBoard() {
       .select("id, product_id, direction, quantity, unit_cost_cents, received_on, expires_on, reason, note, avg_cost_cents_after, created_at")
       .order("created_at", { ascending: false })
       .limit(20),
+    supabase.from("product_components").select("combo_id, product_id, quantity"),
   ]);
+  const rows = (products ?? []) as (StockProduct & { is_combo?: boolean })[];
+  const stock = new Map(rows.map((product) => [product.id, product.stock_quantity]));
+  const pieces = (parts ?? []) as { combo_id: string; product_id: string; quantity: number }[];
   return {
     ready: true,
-    products: (products ?? []) as StockProduct[],
+    products: rows.map((product) => {
+      const item = {
+        id: product.id,
+        name: product.name,
+        stock_quantity: product.stock_quantity,
+        avg_cost_cents: product.avg_cost_cents,
+        cost_price_cents: product.cost_price_cents,
+        active: product.active,
+      };
+      if (!product.is_combo) return item;
+      const components = pieces.filter((part) => part.combo_id === product.id);
+      const available = components.length
+        ? Math.min(...components.map((part) => Math.floor((stock.get(part.product_id) ?? 0) / part.quantity)))
+        : 0;
+      return { ...item, stock_quantity: available };
+    }),
     lots: (lots ?? []) as StockLot[],
     movements: (movements ?? []) as StockMove[],
   };
