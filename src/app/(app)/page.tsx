@@ -6,6 +6,7 @@ import { paymentLabel } from "@/lib/catalog";
 import { periodRange } from "@/lib/dates";
 import { formatDateTime } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
+import { ExpiryAlert } from "@/components/expiry-alert";
 import { listProducts, recentSales, revenueSeries } from "@/server/queries";
 
 export default async function HomePage() {
@@ -40,6 +41,7 @@ export default async function HomePage() {
           </>
         }
       />
+      <ExpiryAlert />
       <section className="grid gap-3 sm:grid-cols-3">
         <Stat label="Hoje" value={formatBRL(todayTotal)} hint={`${todayCount} venda${todayCount === 1 ? "" : "s"}`} />
         <Stat label="Este mês" value={formatBRL(monthTotal)} hint="Faturamento acumulado" />

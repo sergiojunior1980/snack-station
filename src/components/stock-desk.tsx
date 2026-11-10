@@ -8,18 +8,19 @@ import { registerStockMove, type ActionState } from "@/server/actions";
 import type { StockProduct } from "@/server/queries";
 
 export function StockDesk({ products }: { products: StockProduct[] }) {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
   const [direction, setDirection] = useState("entrada");
   const [productId, setProductId] = useState(products[0]?.id ?? "");
+  const [receivedOn, setReceivedOn] = useState(today);
   const [state, action, pending] = useActionState(registerStockMove, null as ActionState);
   const product = products.find((item) => item.id === productId);
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
   return (
     <form action={action} className="grid gap-3 rounded-2xl border bg-card p-5 sm:grid-cols-2 lg:grid-cols-4">
       <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
         <h2 className="font-heading text-2xl">Movimentar estoque</h2>
         <p className="text-sm text-muted-foreground">
-          A entrada recalcula o custo médio. A saída tira primeiro o lote que vence antes e mantém o custo médio.
+          A entrada pede a data de validade e recalcula o custo médio. A saída tira primeiro o lote que vence antes e mantém o custo médio.
           {product ? ` ${product.name} está em ${formatBRL(product.avg_cost_cents)} de custo médio.` : ""}
         </p>
       </div>
@@ -64,11 +65,11 @@ export function StockDesk({ products }: { products: StockProduct[] }) {
         <>
           <div className="space-y-1.5">
             <Label htmlFor="receivedOn">Data de entrada</Label>
-            <Input id="receivedOn" name="receivedOn" type="date" required defaultValue={today} />
+            <Input id="receivedOn" name="receivedOn" type="date" required value={receivedOn} onChange={(event) => setReceivedOn(event.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="expiresOn">Data de validade</Label>
-            <Input id="expiresOn" name="expiresOn" type="date" />
+            <Input id="expiresOn" name="expiresOn" type="date" required min={receivedOn} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="supplier">Fornecedor</Label>

@@ -895,6 +895,7 @@ export async function registerStockMove(_prev: ActionState, formData: FormData):
   if (direction !== "entrada" && direction !== "saida") return { error: "Escolha entrada ou saída." };
   if (!Number.isInteger(quantity) || quantity <= 0) return { error: "Quantidade inválida." };
   if (direction === "entrada" && cost == null) return { error: "Informe o custo unitário da entrada." };
+  if (direction === "entrada" && !/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) return { error: "Informe a data de validade." };
   const supabase = await db();
   const { error } = await supabase.rpc("register_stock_move", {
     p_product_id: String(formData.get("productId") ?? ""),

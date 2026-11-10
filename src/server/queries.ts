@@ -951,6 +951,34 @@ export type StockLot = {
   supplier: string | null;
 };
 
+export type ExpiryLot = {
+  id: string;
+  product_id: string;
+  product_name: string;
+  quantity_remaining: number;
+  received_on: string;
+  expires_on: string | null;
+  supplier: string | null;
+};
+
+export async function expiryLots() {
+  const { supabase, role, menus } = await requireUser();
+  const allowed = canUseMenu(role, menus, "estoque") || canUseMenu(role, menus, "relatorios") || canUseMenu(role, menus, "produtos");
+  if (!supabase || !allowed) return [] as ExpiryLot[];
+  const [{ data: lots }, { data: products }] = await Promise.all([
+    supabase
+      .from("stock_lots")
+      .select("id, product_id, quantity_remaining, received_on, expires_on, supplier")
+      .gt("quantity_remaining", 0),
+    supabase.from("products").select("id, name"),
+  ]);
+  const names = new Map(((products ?? []) as { id: string; name: string }[]).map((product) => [product.id, product.name]));
+  return ((lots ?? []) as Omit<ExpiryLot, "product_name">[]).map((lot) => ({
+    ...lot,
+    product_name: names.get(lot.product_id) ?? "Produto",
+  }));
+}
+
 export type StockMove = {
   id: string;
   product_id: string;

@@ -61,6 +61,7 @@ const nav: NavItem[] = [
     menu: "relatorios",
     children: [
       { href: "/relatorios/estoque", label: "Estoque" },
+      { href: "/relatorios/validades", label: "Validades" },
       {
         href: "/relatorios/financeiro/lucro",
         label: "Financeiro",

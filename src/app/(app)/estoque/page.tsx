@@ -4,6 +4,8 @@ import { StockDesk } from "@/components/stock-desk";
 import { StockNotice } from "@/components/stock-notice";
 import { formatDateTime } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
+import { ExpiryAlert } from "@/components/expiry-alert";
+import { expiryStatus, dayStamp } from "@/lib/dates";
 import { stockBoard } from "@/server/queries";
 
 const reasons: Record<string, string> = {
@@ -18,11 +20,12 @@ const reasons: Record<string, string> = {
 export default async function StockPage() {
   const { products, lots, movements, ready } = await stockBoard();
   const names = new Map(products.map((product) => [product.id, product.name]));
+  const today = dayStamp(new Date());
 
   return (
     <div className="space-y-4">
       <StockNotice />
-      <ModuleNav items={[{ href: "/estoque", label: "Movimento" }, { href: "/compras", label: "Compras" }]} />
+      <ModuleNav items={[{ href: "/estoque", label: "Movimento" }, { href: "/compras", label: "Compras" }, { href: "/relatorios/validades", label: "Validades" }]} />
       <PageHero
         eyebrow="Estoque"
         title="Entrada, saída e custo médio"
@@ -32,6 +35,7 @@ export default async function StockPage() {
         <EmptyState title="Estoque ainda não liberado" description="Rode o SQL 006_cash_and_stock.sql no Supabase para lançar entrada, saída e custo médio." />
       ) : (
         <>
+          <ExpiryAlert />
           <StockDesk products={products} />
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((product) => (
@@ -48,13 +52,16 @@ export default async function StockPage() {
               <EmptyState title="Sem lotes" description="A primeira entrada cria o lote com custo, data e validade." />
             ) : (
               <ul className="divide-y overflow-hidden rounded-2xl border bg-card">
-                {lots.map((lot) => (
+                {lots.map((lot) => {
+                  const status = expiryStatus(lot.expires_on, today);
+                  return (
                   <li key={lot.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                     <div>
                       <p className="font-medium">{names.get(lot.product_id) ?? "Produto"}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className={`text-xs ${status.kind === "expired" || status.kind === "soon" ? "font-medium text-amber-800" : "text-muted-foreground"}`}>
                         Entrou em {lot.received_on.split("-").reverse().join("/")}
                         {lot.expires_on ? ` · vence ${lot.expires_on.split("-").reverse().join("/")}` : " · sem validade"}
+                        {status.kind === "expired" || status.kind === "soon" ? ` · ${status.label}` : ""}
                         {lot.supplier ? ` · ${lot.supplier}` : ""}
                       </p>
                     </div>
@@ -62,7 +69,8 @@ export default async function StockPage() {
                       {lot.quantity_remaining} un · {formatBRL(lot.unit_cost_cents)}
                     </p>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </section>

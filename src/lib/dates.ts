@@ -106,6 +106,31 @@ export function dayStamp(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+export function addIsoDays(iso: string, days: number) {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export function daysBetween(fromIso: string, toIso: string) {
+  const from = Date.parse(`${fromIso}T00:00:00Z`);
+  const to = Date.parse(`${toIso}T00:00:00Z`);
+  return Math.round((to - from) / DAY);
+}
+
+export const expiryWarningDays = 14;
+
+export function expiryStatus(expiresOn: string | null, today = dayStamp(new Date())) {
+  if (!expiresOn) return { kind: "missing" as const, days: null, label: "Sem validade" };
+  const days = daysBetween(today, expiresOn);
+  if (days < 0) return { kind: "expired" as const, days, label: days === -1 ? "Venceu ontem" : `Vencido há ${Math.abs(days)} dias` };
+  if (days === 0) return { kind: "soon" as const, days, label: "Vence hoje" };
+  if (days === 1) return { kind: "soon" as const, days, label: "Vence amanhã" };
+  if (days <= expiryWarningDays) return { kind: "soon" as const, days, label: `Vence em ${days} dias` };
+  return { kind: "ok" as const, days, label: `Vence em ${days} dias` };
+}
+
 export function inclusiveRange(start: string, end: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return null;
   const from = new Date(`${start}T00:00:00-03:00`);
