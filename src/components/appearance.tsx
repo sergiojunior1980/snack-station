@@ -50,7 +50,7 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
     >
       <div>
         <h2 className="font-heading text-xl">Aparência</h2>
-        <p className="text-sm text-muted-foreground">A logo, as cores e a frase da tela de entrada valem para a loja. Com logo enviada, o sistema melhora essa imagem. Sem logo, ele sugere três opções pelo nome da empresa.</p>
+        <p className="text-sm text-muted-foreground">A logo, as cores e a frase da tela de entrada valem para a loja. Com logo enviada, o sistema cria uma versão mais moderna no mesmo layout. Sem logo, ele sugere três opções pelo nome da empresa.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">

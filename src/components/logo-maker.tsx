@@ -31,7 +31,7 @@ export function LogoMaker({
       <div className="space-y-2 rounded-xl border border-dashed p-3">
         <div>
           <p className="text-sm font-medium">Melhorar a logo</p>
-          <p className="text-xs text-muted-foreground">A logo enviada continua no mesmo lugar. O sistema tira o fundo chapado e corta as sobras. As sugestões pelo nome só aparecem quando não há logo.</p>
+          <p className="text-xs text-muted-foreground">O sistema lê a logo enviada e cria outra, no mesmo layout, com um desenho mais moderno. As sugestões pelo nome só aparecem quando não há logo.</p>
         </div>
         <Button
           type="button"
