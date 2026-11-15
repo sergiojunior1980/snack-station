@@ -34,8 +34,11 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
   const [backgroundColor, setBackgroundColor] = useState(appearance.backgroundColor);
   const [photoPreview, setPhotoPreview] = useState(appearance.placePhotoUrl);
   const [pendingLogo, setPendingLogo] = useState<string | null>(null);
+  const [pickedLogo, setPickedLogo] = useState<File | null>(null);
+  const [removeLogo, setRemoveLogo] = useState(false);
   const logoCheck = useRef(0);
   const photoCheck = useRef(0);
+  const hasUploadedLogo = Boolean(pickedLogo) || (Boolean(appearance.logoUrl) && !removeLogo);
 
   return (
     <form
@@ -47,7 +50,7 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
     >
       <div>
         <h2 className="font-heading text-xl">Aparência</h2>
-        <p className="text-sm text-muted-foreground">A logo, as cores e a frase da tela de entrada valem para a loja. Dá para enviar um arquivo, criar a logo pelo nome ou usar a foto do estabelecimento para sugerir a cor de fundo.</p>
+        <p className="text-sm text-muted-foreground">A logo, as cores e a frase da tela de entrada valem para a loja. Com logo enviada, o sistema melhora essa imagem. Sem logo, ele sugere três opções pelo nome da empresa.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
@@ -88,14 +91,22 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
               });
               void logoFileError(file).then((error) => {
                 if (check !== logoCheck.current) return;
-                if (error) input.value = "";
+                if (error) {
+                  input.value = "";
+                  setPickedLogo(null);
+                } else {
+                  setPickedLogo(file);
+                }
                 setFileError(error);
               });
             }}
           />
           <p className="text-xs text-muted-foreground">PNG, JPG ou WebP, até 5 MB. Deixe em branco para manter a logo atual.</p>
           <LogoMaker
+            key={hasUploadedLogo ? "improve" : "suggest"}
             shopName={appearance.name}
+            logoFile={pickedLogo}
+            logoUrl={hasUploadedLogo && !pickedLogo ? appearance.logoUrl : ""}
             onChoose={(file) => {
               chosenLogo.current = file;
               setPendingLogo((current) => {
@@ -160,7 +171,25 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
       </div>
       {appearance.logoUrl ? (
         <label className="flex items-center text-sm">
-          <input type="checkbox" name="removeLogo" className="mr-3 size-4 shrink-0 accent-primary" />
+          <input
+            type="checkbox"
+            name="removeLogo"
+            checked={removeLogo}
+            onChange={(event) => {
+              const checked = event.target.checked;
+              setRemoveLogo(checked);
+              if (!checked) return;
+              chosenLogo.current = null;
+              const input = document.getElementById("logo");
+              const keptFile = input instanceof HTMLInputElement && (input.files?.length ?? 0) > 0;
+              if (!keptFile) setPickedLogo(null);
+              setPendingLogo((current) => {
+                if (current) URL.revokeObjectURL(current);
+                return null;
+              });
+            }}
+            className="mr-3 size-4 shrink-0 accent-primary"
+          />
           Remover a logo
         </label>
       ) : null}
