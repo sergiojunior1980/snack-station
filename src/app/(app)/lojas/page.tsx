@@ -14,7 +14,7 @@ export default async function ShopsPage() {
       <PageHero
         eyebrow="Plataforma"
         title="Lojas"
-        description="Cada loja entra no sistema que já está no ar. Em cada loja, use Alterar dados para mudar o nome, o código, o administrador e a senha."
+        description="Cada loja entra no sistema que já está no ar. Em cada loja, use Alterar para mudar o nome, o código, o administrador e a senha."
       />
       {listed.error ? (
         <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
