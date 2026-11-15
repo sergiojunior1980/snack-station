@@ -151,6 +151,21 @@ export async function createShop(_prev: ActionState, formData: FormData): Promis
   return { ok: "Loja aberta. Passe o código, o usuário e a senha temporária para o cliente." };
 }
 
+export async function updateShop(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const supabase = await db();
+  const { error } = await supabase.rpc("update_shop", {
+    p_shop_id: String(formData.get("shopId") ?? ""),
+    p_name: String(formData.get("name") ?? ""),
+    p_slug: normalizeShop(String(formData.get("slug") ?? "")),
+    p_admin_name: String(formData.get("adminName") ?? ""),
+    p_admin_username: normalizeUsername(String(formData.get("adminUsername") ?? "")),
+    p_admin_password: String(formData.get("adminPassword") ?? ""),
+  });
+  if (error) return { error: message(error) };
+  revalidatePath("/lojas");
+  return { ok: "Dados da loja atualizados." };
+}
+
 export async function setShopStatus(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const status = formData.get("status") === "suspended" ? "suspended" : "active";
   const supabase = await db();
