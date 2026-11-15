@@ -112,7 +112,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: ${{ vars.IAC_REPOSITORY }}
-          token: ${{ secrets.IAC_REPO_TOKEN }}
+          ssh-key: ${{ secrets.IAC_DEPLOY_KEY }}
           ref: master
           persist-credentials: true
 
