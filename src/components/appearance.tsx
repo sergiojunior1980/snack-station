@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { defaultAppearance, type Appearance } from "@/lib/brand";
 import { logoFileError } from "@/lib/logo-file";
 import { backgroundFromPhoto } from "@/lib/place-color";
+import { LogoMaker } from "@/components/logo-maker";
 import { saveAppearance, type ActionState } from "@/server/actions";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -20,11 +21,19 @@ export function useAppearance() {
 }
 
 export function AppearanceForm({ appearance }: { appearance: Appearance }) {
-  const [state, action, pending] = useActionState(saveAppearance, null as ActionState);
+  const chosenLogo = useRef<File | null>(null);
+  const [state, action, pending] = useActionState(async (prev: ActionState, formData: FormData) => {
+    const current = formData.get("logo");
+    if (chosenLogo.current && (!(current instanceof File) || current.size === 0)) {
+      formData.set("logo", chosenLogo.current);
+    }
+    return saveAppearance(prev, formData);
+  }, null as ActionState);
   const [fileError, setFileError] = useState<string | null>(null);
   const [photoNote, setPhotoNote] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState(appearance.backgroundColor);
   const [photoPreview, setPhotoPreview] = useState(appearance.placePhotoUrl);
+  const [pendingLogo, setPendingLogo] = useState<string | null>(null);
   const logoCheck = useRef(0);
   const photoCheck = useRef(0);
 
@@ -38,7 +47,7 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
     >
       <div>
         <h2 className="font-heading text-xl">Aparência</h2>
-        <p className="text-sm text-muted-foreground">A logo, as cores e a frase da tela de entrada valem para a loja. A foto do estabelecimento só sugere a cor de fundo. Você continua podendo ajustar as cores.</p>
+        <p className="text-sm text-muted-foreground">A logo, as cores e a frase da tela de entrada valem para a loja. Dá para enviar um arquivo, criar a logo pelo nome ou usar a foto do estabelecimento para sugerir a cor de fundo.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
@@ -51,11 +60,14 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="logo">Logo</Label>
-          {appearance.logoUrl ? (
+          {pendingLogo ? (
+            <img src={pendingLogo} alt="Logo escolhida" className="mb-2 h-12 max-w-[10rem] object-contain" />
+          ) : appearance.logoUrl ? (
             <img src={appearance.logoUrl} alt="Logo atual" className="mb-2 h-12 max-w-[10rem] object-contain" />
           ) : (
             <p className="text-sm text-muted-foreground">Sem logo, o nome da loja aparece no lugar.</p>
           )}
+          {pendingLogo ? <p className="mb-2 text-xs text-muted-foreground">Esta logo entra ao salvar a aparência.</p> : null}
           <Input
             id="logo"
             name="logo"
@@ -69,6 +81,11 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
                 setFileError(null);
                 return;
               }
+              chosenLogo.current = null;
+              setPendingLogo((current) => {
+                if (current) URL.revokeObjectURL(current);
+                return null;
+              });
               void logoFileError(file).then((error) => {
                 if (check !== logoCheck.current) return;
                 if (error) input.value = "";
@@ -77,6 +94,19 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
             }}
           />
           <p className="text-xs text-muted-foreground">PNG, JPG ou WebP, até 5 MB. Deixe em branco para manter a logo atual.</p>
+          <LogoMaker
+            shopName={appearance.name}
+            onChoose={(file) => {
+              chosenLogo.current = file;
+              setPendingLogo((current) => {
+                if (current) URL.revokeObjectURL(current);
+                return URL.createObjectURL(file);
+              });
+              const input = document.getElementById("logo");
+              if (input instanceof HTMLInputElement) input.value = "";
+              setFileError(null);
+            }}
+          />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="placePhoto">Foto do estabelecimento</Label>
