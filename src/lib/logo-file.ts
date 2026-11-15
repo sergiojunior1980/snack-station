@@ -1,7 +1,7 @@
-export const LOGO_MAX_BYTES = 102_400;
+export const LOGO_MAX_BYTES = 5 * 1024 * 1024;
 
 export const LOGO_TYPE_ERROR = "O sistema não aceita esse tipo de arquivo. Envie PNG, JPG ou WebP.";
-export const LOGO_SIZE_ERROR = "O arquivo é maior do que o esperado. O limite é 100 KB.";
+export const LOGO_SIZE_ERROR = "O arquivo é maior do que o esperado. O limite é 5 MB.";
 
 export function logoKind(bytes: Uint8Array) {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg" as const;

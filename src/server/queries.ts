@@ -91,7 +91,7 @@ export const appearance = cache(async (): Promise<Appearance> => {
     supabase
       .from("app_settings")
       .select("key, value")
-      .in("key", ["brand_button_color", "brand_background_color", "brand_logo_url", "brand_tagline", "brand_tagline_note"]),
+      .in("key", ["brand_button_color", "brand_background_color", "brand_logo_url", "brand_place_photo_url", "brand_tagline", "brand_tagline_note"]),
     supabase.auth.getUser(),
   ]);
   let name = "";
@@ -108,6 +108,7 @@ export const appearance = cache(async (): Promise<Appearance> => {
     buttonColor: isHexColor(buttonColor) ? buttonColor : defaultAppearance.buttonColor,
     backgroundColor: isHexColor(backgroundColor) ? backgroundColor : defaultAppearance.backgroundColor,
     logoUrl: values.get("brand_logo_url") ?? "",
+    placePhotoUrl: values.get("brand_place_photo_url") ?? "",
     tagline: values.get("brand_tagline")?.trim() || defaultAppearance.tagline,
     taglineNote: values.get("brand_tagline_note")?.trim() || defaultAppearance.taglineNote,
   };

@@ -4,6 +4,7 @@ import { createContext, useContext, useRef, useState } from "react";
 import { useActionState } from "react";
 import { defaultAppearance, type Appearance } from "@/lib/brand";
 import { logoFileError } from "@/lib/logo-file";
+import { backgroundFromPhoto } from "@/lib/place-color";
 import { saveAppearance, type ActionState } from "@/server/actions";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -21,21 +22,23 @@ export function useAppearance() {
 export function AppearanceForm({ appearance }: { appearance: Appearance }) {
   const [state, action, pending] = useActionState(saveAppearance, null as ActionState);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [photoNote, setPhotoNote] = useState<string | null>(null);
+  const [backgroundColor, setBackgroundColor] = useState(appearance.backgroundColor);
+  const [photoPreview, setPhotoPreview] = useState(appearance.placePhotoUrl);
   const logoCheck = useRef(0);
+  const photoCheck = useRef(0);
 
   return (
     <form
       action={action}
       className="space-y-3 rounded-2xl border bg-card p-4"
       onSubmit={(event) => {
-        const input = event.currentTarget.elements.namedItem("logo");
-        const file = input instanceof HTMLInputElement ? input.files?.[0] : undefined;
-        if (file && file.size > 0 && fileError) event.preventDefault();
+        if (fileError) event.preventDefault();
       }}
     >
       <div>
         <h2 className="font-heading text-xl">Aparência</h2>
-        <p className="text-sm text-muted-foreground">A logo, as cores e a frase da tela de entrada valem para a loja.</p>
+        <p className="text-sm text-muted-foreground">A logo, as cores e a frase da tela de entrada valem para a loja. A foto do estabelecimento só sugere a cor de fundo. Você continua podendo ajustar as cores.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
@@ -44,7 +47,7 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="backgroundColor">Cor de fundo</Label>
-          <Input id="backgroundColor" name="backgroundColor" type="color" defaultValue={appearance.backgroundColor} className="h-10 w-full p-1" />
+          <Input id="backgroundColor" name="backgroundColor" type="color" value={backgroundColor} onChange={(event) => setBackgroundColor(event.target.value)} className="h-10 w-full p-1" />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="logo">Logo</Label>
@@ -73,7 +76,48 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
               });
             }}
           />
-          <p className="text-xs text-muted-foreground">PNG, JPG ou WebP, até 100 KB. Deixe em branco para manter a logo atual.</p>
+          <p className="text-xs text-muted-foreground">PNG, JPG ou WebP, até 5 MB. Deixe em branco para manter a logo atual.</p>
+        </div>
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="placePhoto">Foto do estabelecimento</Label>
+          {photoPreview ? (
+            <img src={photoPreview} alt="Foto do estabelecimento" className="mb-2 h-28 max-w-full rounded-lg object-cover" />
+          ) : (
+            <p className="text-sm text-muted-foreground">Envie uma foto da loja para sugerir a cor de fundo.</p>
+          )}
+          <Input
+            id="placePhoto"
+            name="placePhoto"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+            onChange={(event) => {
+              const input = event.currentTarget;
+              const file = input.files?.[0];
+              const check = ++photoCheck.current;
+              if (!file) return;
+              void logoFileError(file).then(async (error) => {
+                if (check !== photoCheck.current) return;
+                if (error) {
+                  input.value = "";
+                  setFileError(error);
+                  setPhotoNote(null);
+                  return;
+                }
+                setFileError(null);
+                setPhotoPreview(URL.createObjectURL(file));
+                const color = await backgroundFromPhoto(file);
+                if (check !== photoCheck.current) return;
+                if (!color) {
+                  setPhotoNote("Não deu para ler uma cor nessa foto. Escolha a cor de fundo manualmente.");
+                  return;
+                }
+                setBackgroundColor(color);
+                setPhotoNote("A cor de fundo foi sugerida a partir da foto. Ajuste se quiser outra.");
+              });
+            }}
+          />
+          <p className="text-xs text-muted-foreground">PNG, JPG ou WebP, até 5 MB. A foto não substitui a logo.</p>
+          {photoNote ? <p className="text-sm text-muted-foreground">{photoNote}</p> : null}
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="tagline">Frase da tela de entrada</Label>
@@ -88,6 +132,12 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
         <label className="flex items-center text-sm">
           <input type="checkbox" name="removeLogo" className="mr-3 size-4 shrink-0 accent-primary" />
           Remover a logo
+        </label>
+      ) : null}
+      {appearance.placePhotoUrl ? (
+        <label className="flex items-center text-sm">
+          <input type="checkbox" name="removePlacePhoto" className="mr-3 size-4 shrink-0 accent-primary" />
+          Remover a foto do estabelecimento
         </label>
       ) : null}
       {fileError && !state?.ok ? <p className="text-sm text-destructive">{fileError}</p> : null}

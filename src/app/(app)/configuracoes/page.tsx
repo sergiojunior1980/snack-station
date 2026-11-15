@@ -10,7 +10,7 @@ export default async function SettingsPage() {
       <PageHero
         eyebrow="Configurações"
         title="Aparência da loja"
-        description="A cor dos botões, o fundo, a logo e a frase da entrada valem para todo o sistema."
+        description="A cor dos botões, o fundo, a logo, a foto da loja e a frase da entrada valem para todo o sistema."
       />
       <AppearanceForm appearance={look} />
     </div>

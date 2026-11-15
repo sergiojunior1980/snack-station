@@ -6,6 +6,7 @@ export const defaultAppearance = {
   buttonColor: "#b8002e",
   backgroundColor: "#fff7f7",
   logoUrl: "",
+  placePhotoUrl: "",
   tagline: defaultTagline,
   taglineNote: defaultTaglineNote,
 };

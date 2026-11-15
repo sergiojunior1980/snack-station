@@ -529,10 +529,31 @@ export async function saveAppearance(_prev: ActionState, formData: FormData): Pr
     logoUrl = env ? `${env.url}/storage/v1/object/public/marca/${path}?v=${Date.now()}` : "";
   }
 
+  let placePhotoUrl = "";
+  const { data: currentPhoto } = await supabase.from("app_settings").select("value").eq("key", "brand_place_photo_url").maybeSingle();
+  placePhotoUrl = currentPhoto?.value ?? "";
+  if (formData.get("removePlacePhoto") === "on") {
+    await supabase.storage.from("marca").remove([`${tenantId}/place.png`, `${tenantId}/place.jpg`, `${tenantId}/place.webp`]);
+    placePhotoUrl = "";
+  }
+  const photo = formData.get("placePhoto");
+  if (photo instanceof File && photo.size > 0) {
+    if (photo.size > LOGO_MAX_BYTES) return { error: LOGO_SIZE_ERROR };
+    const kind = logoKind(new Uint8Array(await photo.slice(0, 16).arrayBuffer()));
+    if (!kind) return { error: LOGO_TYPE_ERROR };
+    const ext = kind === "image/png" ? "png" : kind === "image/webp" ? "webp" : "jpg";
+    const path = `${tenantId}/place.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("marca").upload(path, photo, { contentType: kind, upsert: true });
+    if (uploadError) return { error: message(uploadError) };
+    const env = supabaseEnv();
+    placePhotoUrl = env ? `${env.url}/storage/v1/object/public/marca/${path}?v=${Date.now()}` : "";
+  }
+
   const { error } = await supabase.from("app_settings").upsert([
     { tenant_id: tenantId, key: "brand_button_color", value: buttonColor || defaultAppearance.buttonColor },
     { tenant_id: tenantId, key: "brand_background_color", value: backgroundColor || defaultAppearance.backgroundColor },
     { tenant_id: tenantId, key: "brand_logo_url", value: logoUrl },
+    { tenant_id: tenantId, key: "brand_place_photo_url", value: placePhotoUrl },
     { tenant_id: tenantId, key: "brand_tagline", value: tagline },
     { tenant_id: tenantId, key: "brand_tagline_note", value: taglineNote },
   ], { onConflict: "tenant_id,key" });
