@@ -12,12 +12,16 @@ export function LogoMaker({
   logoFile,
   logoUrl,
   onChoose,
+  onClear,
 }: {
   shopName: string;
   logoFile: File | null;
   logoUrl: string;
   onChoose: (file: File) => void;
+  onClear?: () => void;
 }) {
+  const [draft, setDraft] = useState<{ file: File; url: string } | null>(null);
+  const [applied, setApplied] = useState(false);
   const [name, setName] = useState(shopName);
   const [options, setOptions] = useState<LogoOption[]>([]);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -31,7 +35,7 @@ export function LogoMaker({
       <div className="space-y-2 rounded-xl border border-dashed p-3">
         <div>
           <p className="text-sm font-medium">Melhorar a logo</p>
-          <p className="text-xs text-muted-foreground">O sistema lê a logo enviada e cria outra, no mesmo layout, com um desenho mais moderno. As sugestões pelo nome só aparecem quando não há logo.</p>
+          <p className="text-xs text-muted-foreground">O sistema lê a logo, aumenta o que estiver pequeno e mostra uma prévia grande. A logo da loja só muda se você usar essa versão e salvar.</p>
         </div>
         <Button
           type="button"
@@ -42,11 +46,21 @@ export function LogoMaker({
             if (!source) return;
             setBusy(true);
             setNote(null);
+            setApplied(false);
+            onClear?.();
             void improveUploadedLogo(source)
               .then((result) => {
+                if (!result.file) {
+                  setNoteTone("error");
+                  setNote(result.note);
+                  return;
+                }
+                setDraft((current) => {
+                  if (current) URL.revokeObjectURL(current.url);
+                  return { file: result.file as File, url: URL.createObjectURL(result.file as File) };
+                });
                 setNoteTone("info");
-                setNote(result.note);
-                if (result.file) onChoose(result.file);
+                setNote("Esta é só a prévia. A logo do sistema continua a atual até você usar esta versão e salvar.");
               })
               .catch(() => {
                 setNoteTone("error");
@@ -57,6 +71,47 @@ export function LogoMaker({
         >
           {busy ? "Melhorando…" : "Melhorar logo"}
         </Button>
+        {draft ? (
+          <div className="space-y-3">
+            <div className="rounded-2xl border bg-white p-4">
+              <p className="mb-2 text-xs text-muted-foreground">Logo melhorada</p>
+              <img src={draft.url} alt="Prévia da logo melhorada" className="mx-auto h-56 w-full object-contain" />
+            </div>
+            <div className="rounded-xl border bg-card px-4 py-3">
+              <p className="mb-2 text-xs text-muted-foreground">Como fica no sistema</p>
+              <img src={draft.url} alt="Prévia no cabeçalho" className="h-14 max-w-[13rem] object-contain" />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  onChoose(draft.file);
+                  setApplied(true);
+                  setNoteTone("info");
+                  setNote("Prévia confirmada. Salve a aparência para aplicar no sistema.");
+                }}
+              >
+                Usar esta logo
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDraft((current) => {
+                    if (current) URL.revokeObjectURL(current.url);
+                    return null;
+                  });
+                  setApplied(false);
+                  setNote(null);
+                  onClear?.();
+                }}
+              >
+                Descartar
+              </Button>
+            </div>
+            {applied ? null : <p className="text-xs text-muted-foreground">Ainda não alterou a logo da loja.</p>}
+          </div>
+        ) : null}
         {note ? <p className={noteTone === "error" ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>{note}</p> : null}
       </div>
     );

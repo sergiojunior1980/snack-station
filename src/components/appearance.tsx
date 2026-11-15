@@ -63,14 +63,15 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="logo">Logo</Label>
-          {pendingLogo ? (
-            <img src={pendingLogo} alt="Logo escolhida" className="mb-2 h-12 max-w-[10rem] object-contain" />
-          ) : appearance.logoUrl ? (
-            <img src={appearance.logoUrl} alt="Logo atual" className="mb-2 h-12 max-w-[10rem] object-contain" />
+          {appearance.logoUrl ? (
+            <div className="mb-2">
+              <p className="mb-1 text-xs text-muted-foreground">Logo atual</p>
+              <img src={appearance.logoUrl} alt="Logo atual" className="h-14 max-w-[13rem] object-contain" />
+            </div>
           ) : (
-            <p className="text-sm text-muted-foreground">Sem logo, o nome da loja aparece no lugar.</p>
+            <p className="mb-2 text-sm text-muted-foreground">Sem logo, o nome da loja aparece no lugar.</p>
           )}
-          {pendingLogo ? <p className="mb-2 text-xs text-muted-foreground">Esta logo entra ao salvar a aparência.</p> : null}
+          {pendingLogo ? <p className="mb-2 text-xs text-muted-foreground">Nova logo confirmada. Salve a aparência para trocar a logo da loja.</p> : null}
           <Input
             id="logo"
             name="logo"
@@ -116,6 +117,13 @@ export function AppearanceForm({ appearance }: { appearance: Appearance }) {
               const input = document.getElementById("logo");
               if (input instanceof HTMLInputElement) input.value = "";
               setFileError(null);
+            }}
+            onClear={() => {
+              chosenLogo.current = null;
+              setPendingLogo((current) => {
+                if (current) URL.revokeObjectURL(current);
+                return null;
+              });
             }}
           />
         </div>

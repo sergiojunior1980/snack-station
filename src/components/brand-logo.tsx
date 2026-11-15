@@ -27,7 +27,7 @@ export function BrandLogo({
         <img
           src={url}
           alt="Logo"
-          className={cn("h-9 max-w-[8.5rem] object-contain", inverted && "rounded-md bg-white px-2 py-1")}
+          className={cn("h-14 max-w-[13rem] object-contain", inverted && "rounded-md bg-white px-2 py-1")}
         />
       ) : (
         <span className={cn("font-heading text-xl tracking-tight", inverted ? "text-white" : "text-primary")}>{label}</span>

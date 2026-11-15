@@ -224,6 +224,8 @@ function drawPiece(
   const drawnHeight = height * scale;
   const drawnX = x;
   const drawnY = y + (maxHeight - drawnHeight) / 2;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.drawImage(source, piece.left, piece.top, width, height, drawnX, drawnY, drawnWidth, drawnHeight);
   return { x: drawnX, y: drawnY, width: drawnWidth, height: drawnHeight };
 }
@@ -290,17 +292,17 @@ function modernCanvas(
   };
 
   if (columnGap && aspect > 1.05) {
-    output.width = 1280;
-    output.height = 420;
+    output.width = 1400;
+    output.height = 560;
     const left = scan(data, width, { left: bounds.left, top: bounds.top, right: bounds.left + columnGap.at, bottom: bounds.bottom });
     const right = scan(data, width, { left: bounds.left + columnGap.at + columnGap.length, top: bounds.top, right: bounds.right, bottom: bounds.bottom });
     if (left && right) {
       plate();
       ctx.fillStyle = color;
-      roundRect(ctx, 36, 78, 16, 264, 8);
+      roundRect(ctx, 28, 48, 18, 464, 9);
       ctx.fill();
-      const symbol = drawPiece(ctx, source, left, 84, 50, 300, 320);
-      const text = drawPiece(ctx, source, right, symbol.x + symbol.width + 48, 70, 760, 240);
+      const symbol = drawPiece(ctx, source, left, 70, 36, 420, 488);
+      const text = drawPiece(ctx, source, right, symbol.x + symbol.width + 36, 48, 820, 420);
       ctx.fillStyle = color;
       roundRect(ctx, text.x, text.y + text.height + 18, Math.max(96, text.width * 0.38), 12, 6);
       ctx.fill();
@@ -339,13 +341,13 @@ function modernCanvas(
     return output;
   }
 
-  output.width = 1280;
-  output.height = 420;
+  output.width = 1400;
+  output.height = 560;
   plate();
   ctx.fillStyle = color;
-  roundRect(ctx, 36, 78, 16, 264, 8);
+  roundRect(ctx, 28, 48, 18, 464, 9);
   ctx.fill();
-  const word = drawPiece(ctx, source, bounds, 88, 58, 1100, 280);
+  const word = drawPiece(ctx, source, bounds, 72, 40, 1260, 440);
   ctx.fillStyle = color;
   roundRect(ctx, word.x, word.y + word.height + 16, Math.max(120, word.width * 0.34), 12, 6);
   ctx.fill();
